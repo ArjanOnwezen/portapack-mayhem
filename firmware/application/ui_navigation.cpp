@@ -634,19 +634,19 @@ SystemView::SystemView(
 		navigation_view.push<PlayDeadView>();
 	} else {*/
 	
-		navigation_view.push<SystemMenuView>();
+	navigation_view.push<SystemMenuView>();
 		
-		if (portapack::persistent_memory::config_splash())
-		{
-			navigation_view.push<BMPView>();
-		}
-			status_view.set_back_enabled(false);
-			status_view.set_title_image_enabled(true);
-			status_view.set_dirty();
-		//else
-		//	navigation_view.push<SystemMenuView>();
-			
-	//}
+	if (portapack::persistent_memory::config_splash())
+	{
+		navigation_view.push<BMPView>();
+	}
+		status_view.set_back_enabled(false);
+		status_view.set_title_image_enabled(true);
+		status_view.set_dirty();
+
+	// start app on startup
+	navigation_view.push<SondeView>();
+	status_view.set_back_enabled(true);
 }
 
 Context& SystemView::context() const {

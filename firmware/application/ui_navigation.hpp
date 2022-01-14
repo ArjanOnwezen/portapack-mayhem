@@ -56,6 +56,20 @@ namespace ui
 		ABORT
 	};
 
+
+	using applicaton_list_t = std::vector<std::pair<std::string, std::string>>;
+
+
+
+	const application_t applications = {
+		{ "None", "aaa" },
+		{ "", "aaa" },
+		{ "1 WZ", "aaa" },
+		{ "1 WZ", "aaa" },
+		{ "1 WZ", "aaa" },
+		{ "1 WZ", "aaa" }
+	}
+
 	class NavigationView : public View
 	{
 	public:

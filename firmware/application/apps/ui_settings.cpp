@@ -538,14 +538,40 @@ void ModInfoView::focus() {
 		button_ok.focus();
 }*/
 
+SetStartupView::SetStartupView(NavigationView& nav) {
+	add_children({
+		&checkbox_showsplash,
+		&options_startupprogram,		
+		&button_save
+	});
+	
+
+	checkbox_showsplash.set_value(persistent_memory::config_splash());
+
+	//options_startupprogram.set_by_value(backlight_timer);
+
+
+	button_save.on_select = [&nav, this](Button&) {
+		persistent_memory::set_config_splash(checkbox_showsplash.value());
+
+		nav.pop();
+	};
+}
+
+void SetStartupView::focus() {
+	button_save.focus();
+}
+
+
 SettingsMenuView::SettingsMenuView(NavigationView& nav) {
 	add_items({
 		//{ "..", 			  ui::Color::light_grey(), &bitmap_icon_previous,		  [&nav](){ nav.pop(); } },
-		{ "Audio", 			ui::Color::dark_cyan(), &bitmap_icon_speaker,			[&nav](){ nav.push<SetAudioView>(); } },
-		{ "Radio",			ui::Color::dark_cyan(), &bitmap_icon_options_radio,		[&nav](){ nav.push<SetRadioView>(); } },
-		{ "Interface", 		ui::Color::dark_cyan(), &bitmap_icon_options_ui,		[&nav](){ nav.push<SetUIView>(); } },
+		{ "Audio", 			ui::Color::dark_cyan(), &bitmap_icon_speaker,		[&nav](){ nav.push<SetAudioView>(); } },
+		{ "Radio",			ui::Color::dark_cyan(), &bitmap_icon_options_radio,	[&nav](){ nav.push<SetRadioView>(); } },
+		{ "Interface", 			ui::Color::dark_cyan(), &bitmap_icon_options_ui,	[&nav](){ nav.push<SetUIView>(); } },
 		//{ "SD card modules", ui::Color::dark_cyan(), 								  [&nav](){ nav.push<ModInfoView>(); } },
-		{ "Date/Time",		ui::Color::dark_cyan(), &bitmap_icon_options_datetime,	[&nav](){ nav.push<SetDateTimeView>(); } },
+		{ "Date/Time",			ui::Color::dark_cyan(), &bitmap_icon_options_datetime,	[&nav](){ nav.push<SetDateTimeView>(); } },
+		{ "Startup",			ui::Color::dark_cyan(), &bitmap_icon_replay,		[&nav](){ nav.push<SetStartupView>(); } },
 		{ "Touchscreen",	ui::Color::dark_cyan(), &bitmap_icon_options_touch,		[&nav](){ nav.push<TouchCalibrationView>(); } },
 		//{ "Play dead",	   ui::Color::dark_cyan(), &bitmap_icon_playdead,		  [&nav](){ nav.push<SetPlayDeadView>(); } }
 	});

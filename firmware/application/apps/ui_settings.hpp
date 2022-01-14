@@ -277,6 +277,45 @@ private:
 	};
 };
 
+class SetStartupView : public View {
+public:
+	SetStartupView(NavigationView& nav);
+	
+	void focus() override;
+	
+	std::string title() const override { return "Startup"; };
+	
+private:
+	using option_t = std::pair<std::string, int32_t>;
+	using options_t = std::vector<option_t>;
+	//options_t testoptions = {};
+	options_t testoptions = {	
+					{ "None", 0},
+					{ "Receive: ADS-B", 1}
+				};
+
+	
+	Checkbox checkbox_showsplash {
+		{ 3 * 8, 9 * 16 },
+		20,
+		"Show splash"
+	};
+
+
+	OptionsField options_startupprogram {
+		{ 52, 12 * 16 + 8 },
+		20,
+		testoptions
+	};	
+	
+	Button button_save {
+		{ 2 * 8, 16 * 16, 12 * 8, 32 },
+		"Save"
+	};
+};
+
+
+
 class SetAudioView : public View {
 public:
 	SetAudioView(NavigationView& nav);
