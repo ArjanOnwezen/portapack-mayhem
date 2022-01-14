@@ -550,6 +550,13 @@ SetStartupView::SetStartupView(NavigationView& nav) {
 
 	//options_startupprogram.set_by_value(backlight_timer);
 
+	for (int32_t c = 0; c < application_list.size(); c++) {
+		testoption = std::make_pair(application_list[c].first, c);
+		testoptions.push_back(testoption);
+	}
+	
+	options_startupprogram.set_options(testoptions);
+
 
 	button_save.on_select = [&nav, this](Button&) {
 		persistent_memory::set_config_splash(checkbox_showsplash.value());

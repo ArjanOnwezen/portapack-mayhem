@@ -288,11 +288,9 @@ public:
 private:
 	using option_t = std::pair<std::string, int32_t>;
 	using options_t = std::vector<option_t>;
-	//options_t testoptions = {};
-	options_t testoptions = {	
-					{ "None", 0},
-					{ "Receive: ADS-B", 1}
-				};
+
+	option_t testoption;
+	options_t testoptions;
 
 	
 	Checkbox checkbox_showsplash {

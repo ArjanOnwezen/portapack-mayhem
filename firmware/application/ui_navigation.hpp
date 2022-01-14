@@ -57,18 +57,15 @@ namespace ui
 	};
 
 
-	using applicaton_list_t = std::vector<std::pair<std::string, std::string>>;
+	using application_list_t = std::vector<std::pair<std::string, std::string>>;
 
-
-
-	const application_t applications = {
-		{ "None", "aaa" },
-		{ "", "aaa" },
-		{ "1 WZ", "aaa" },
-		{ "1 WZ", "aaa" },
-		{ "1 WZ", "aaa" },
-		{ "1 WZ", "aaa" }
-	}
+	const application_list_t application_list = {
+		{ "None"		, "aaa" 		},
+		{ "Microphone"		, "MicTXView" 		},
+		{ "Receive ADS-B"	, "ADSBRxView" 		},
+		{ "Receive AIS"		, "AISAppView" 		},
+		{ "Receive Radiosonde"	, "SondeView" 		}
+	};
 
 	class NavigationView : public View
 	{
