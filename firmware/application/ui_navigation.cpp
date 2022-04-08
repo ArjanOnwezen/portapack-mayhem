@@ -53,6 +53,7 @@
 //#include "ui_nuoptix.hpp"
 //#include "ui_playdead.hpp"
 #include "ui_pocsag_tx.hpp"
+#include "ui_rc_car_tx.hpp"
 #include "ui_rds.hpp"
 #include "ui_remote.hpp"
 #include "ui_scanner.hpp"
@@ -513,6 +514,7 @@ TransmittersMenuView::TransmittersMenuView(NavigationView& nav) {
 		//{ "Nuoptix DTMF", 	ui::Color::green(),		&bitmap_icon_nuoptix,	[&nav](){ nav.push<NuoptixView>(); } },
 		{ "OOK",			ui::Color::yellow(),	&bitmap_icon_remote,	[&nav](){ nav.push<EncodersView>(); } },
 		{ "POCSAG", 		ui::Color::green(),		&bitmap_icon_pocsag,	[&nav](){ nav.push<POCSAGTXView>(); } },
+		{ "RC Car", 		ui::Color::green(),		&bitmap_icon_remote,	[&nav](){ nav.push<RCCarTxView>(); } },
 		{ "RDS",			ui::Color::green(),		&bitmap_icon_rds,		[&nav](){ nav.push<RDSView>(); } },
 		{ "Soundbrd",		ui::Color::green(), 	&bitmap_icon_soundboard,[&nav](){ nav.push<SoundBoardView>(); } },
 		{ "SSTV", 			ui::Color::green(), 	&bitmap_icon_sstv,		[&nav](){ nav.push<SSTVTXView>(); } },
