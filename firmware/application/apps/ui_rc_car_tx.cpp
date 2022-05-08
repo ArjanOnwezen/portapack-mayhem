@@ -103,16 +103,16 @@ void RCCarTxView::start_tx(const uint32_t button_index) {
 
 	transmitter_model.set_tuning_frequency(27145000);//change into variable
 	transmitter_model.set_sampling_rate(SAMPLING_RATE);
-	transmitter_model.set_tx_gain(47);
+	transmitter_model.set_tx_gain(32);
 	transmitter_model.set_rf_amp(true); 
 	transmitter_model.set_baseband_bandwidth(1750000);
 	transmitter_model.enable();
 	
 	baseband::set_ook_data(
 		bitstream_length,
-		SAMPLING_RATE / 2018,
-		10, //RCCarTx_REPEATS
-		200						// Pause
+		SAMPLING_RATE / 1250, //2018,
+		2, 						//RCCarTx_REPEATS
+		0						// Pause
 	);
 }
 
