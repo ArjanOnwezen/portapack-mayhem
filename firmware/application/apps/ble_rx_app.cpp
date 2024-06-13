@@ -426,6 +426,7 @@ BLERxView::BLERxView(NavigationView& nav)
                   &options_sort,
                   &label_found,
                   &text_found_count,
+                  &check_serial_log,
                   &button_filter,
                   &button_save_list,
                   &button_clear_list,
@@ -436,7 +437,15 @@ BLERxView::BLERxView(NavigationView& nav)
         nav_.push<BleRecentEntryDetailView>(entry);
     };
 
-    usb_serial_thread = std::make_unique<UsbSerialThread>();
+    check_serial_log.on_select = [this](Checkbox&, bool v) {
+        serial_logging = v;
+        if (v) {
+            usb_serial_thread = std::make_unique<UsbSerialThread>();
+        } else {
+            usb_serial_thread.reset();
+        }
+    };
+    check_serial_log.set_value(serial_logging);
 
     ensure_directory(find_packet_path);
     ensure_directory(log_packets_path);
@@ -456,18 +465,14 @@ BLERxView::BLERxView(NavigationView& nav)
 
     logger = std::make_unique<BLELogger>();
 
-    check_log.set_value(logging);
-
     check_log.on_select = [this](Checkbox&, bool v) {
         str_log = "";
         logging = v;
 
         if (logger && logging)
-            logger->append(
-                "BLERX/Logs"
-                "/BLELOG_" +
-                to_string_timestamp(rtc_time::now()) + ".TXT");
+            logger->append(blerx_dir.string() + "/Logs/BLELOG_" + to_string_timestamp(rtc_time::now()) + ".TXT");
     };
+    check_log.set_value(logging);
 
     button_save_list.on_select = [this, &nav](const ui::Button&) {
         listFileBuffer = "";
@@ -723,8 +728,10 @@ void BLERxView::on_data(BlePacketData* packet) {
         logger->log_raw_data(str_console + "\r\n");
     }
 
-    usb_serial_thread->serial_str = str_console + "\r\n";
-    usb_serial_thread->str_ready = true;
+    if (serial_logging) {
+        usb_serial_thread->serial_str = str_console + "\r\n";
+        usb_serial_thread->str_ready = true;
+    }
     str_console = "";
 
     if (!searchList.empty()) {
@@ -758,7 +765,7 @@ void BLERxView::on_filter_change(std::string value) {
 }
 
 void BLERxView::on_file_changed(const std::filesystem::path& new_file_path) {
-    file_path = fs::path(u"/") + new_file_path;
+    file_path = new_file_path;
     found_count = 0;
     total_count = 0;
     searchList.clear();

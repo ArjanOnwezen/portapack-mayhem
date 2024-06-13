@@ -70,6 +70,10 @@ File::~File() {
     f_close(&f);
 }
 
+void File::close() {
+    f_close(&f);
+}
+
 File::Result<File::Size> File::read(void* data, Size bytes_to_read) {
     UINT bytes_read = 0;
     const auto result = f_read(&f, data, bytes_to_read, &bytes_read);
@@ -96,6 +100,10 @@ File::Result<File::Size> File::write(const void* data, Size bytes_to_write) {
 
 File::Offset File::tell() const {
     return f_tell(&f);
+}
+
+File::Result<bool> File::eof() {
+    return f_eof(&f);
 }
 
 File::Result<File::Offset> File::seek(Offset new_position) {
@@ -459,6 +467,15 @@ path path::stem() const {
 std::string path::string() const {
     std::wstring_convert<std::codecvt_utf8_utf16<path::value_type>, path::value_type> conv;
     return conv.to_bytes(native());
+}
+
+// appends a string to the end of filename, but leaves the extension asd.txt + "fg" -> asdfg.txt
+path& path::append_filename(const string_type& str) {
+    const auto t = extension().native();
+    _s.erase(_s.size() - t.size());  // remove extension
+    _s += str;                       // append string
+    _s += t;                         // add back extension
+    return *this;
 }
 
 path& path::replace_extension(const path& replacement) {

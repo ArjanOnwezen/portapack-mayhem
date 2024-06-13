@@ -26,7 +26,6 @@
 
 #include "ui.hpp"
 #include "ui_painter.hpp"
-#include "ui_styles.hpp"
 #include "ui_widget.hpp"
 #include "event_m0.hpp"
 #include "freqman.hpp"
@@ -50,6 +49,8 @@ class FreqManUIList : public Widget {
     void on_blur() override;
     bool on_key(const KeyEvent key) override;
     bool on_encoder(EncoderEvent delta) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+
     void set_parent_rect(Rect new_parent_rect) override;
 
     void set_index(size_t index);

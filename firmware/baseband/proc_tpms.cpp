@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
+ * Copyright (C) 2023 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -20,6 +21,7 @@
  */
 
 #include "proc_tpms.hpp"
+#include "audio_dma.hpp"
 
 #include "dsp_fir_taps.hpp"
 
@@ -59,7 +61,17 @@ void TPMSProcessor::execute(const buffer_c8_t& buffer) {
     }
 }
 
+void TPMSProcessor::on_message(const Message* const msg) {
+    if (msg->id == Message::ID::AudioBeep)
+        on_beep_message(*reinterpret_cast<const AudioBeepMessage*>(msg));
+}
+
+void TPMSProcessor::on_beep_message(const AudioBeepMessage& message) {
+    audio::dma::beep_start(message.freq, message.sample_rate, message.duration_ms);
+}
+
 int main() {
+    audio::dma::init_audio_out();
     EventDispatcher event_dispatcher{std::make_unique<TPMSProcessor>()};
     event_dispatcher.run();
     return 0;

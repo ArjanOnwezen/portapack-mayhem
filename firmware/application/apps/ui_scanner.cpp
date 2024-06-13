@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2018 Furrtek
+ * Copyright (C) 2023 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -25,6 +26,7 @@
 #include "optional.hpp"
 #include "ui_fileman.hpp"
 #include "ui_freqman.hpp"
+#include "file_path.hpp"
 
 using namespace portapack;
 namespace fs = std::filesystem;
@@ -183,16 +185,16 @@ void ScannerView::bigdisplay_update(int32_t v) {
 
         switch (bigdisplay_current_color) {
             case BDC_GREY:
-                big_display.set_style(&Styles::grey);
+                big_display.set_style(Theme::getInstance()->fg_medium);
                 break;
             case BDC_YELLOW:
-                big_display.set_style(&Styles::yellow);
+                big_display.set_style(Theme::getInstance()->fg_yellow);
                 break;
             case BDC_GREEN:
-                big_display.set_style(&Styles::green);
+                big_display.set_style(Theme::getInstance()->fg_green);
                 break;
             case BDC_RED:
-                big_display.set_style(&Styles::red);
+                big_display.set_style(Theme::getInstance()->fg_red);
                 break;
             default:
                 break;
@@ -275,13 +277,13 @@ ScannerView::~ScannerView() {
 }
 
 void ScannerView::show_max_index() {  // show total number of freqs to scan
-    field_current_index.set_text("---");
+    field_current_index.set_text("<->");
 
     if (entries.size() == FREQMAN_MAX_PER_FILE) {
-        text_max_index.set_style(&Styles::red);
+        text_max_index.set_style(Theme::getInstance()->fg_red);
         text_max_index.set("/ " + to_string_dec_uint(FREQMAN_MAX_PER_FILE) + " (DB MAX!)");
     } else {
-        text_max_index.set_style(&Styles::grey);
+        text_max_index.set_style(Theme::getInstance()->fg_medium);
         text_max_index.set("/ " + to_string_dec_uint(entries.size()));
     }
 }
@@ -336,7 +338,7 @@ ScannerView::ScannerView(
         auto open_view = nav.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
         open_view->on_changed = [this, &nav](std::filesystem::path new_file_path) {
-            if (new_file_path.native().find(freqman_dir.native()) == 0) {
+            if (new_file_path.native().find((u"/" / freqman_dir).native()) == 0) {
                 scan_pause();
                 frequency_file_load(new_file_path);
             } else {
@@ -411,7 +413,7 @@ ScannerView::ScannerView(
     button_mic_app.on_select = [this](Button&) {
         if (scan_thread)
             scan_thread->stop();
-        // MicTX wants Modulation and Bandwidth overrides, but that's only stored on the RX model.
+        // MicTX wants Frequency, Modulation and Bandwidth overrides, but that's only stored on the RX model.
         nav_.replace<MicTXView>(receiver_model.settings());
     };
 
@@ -564,6 +566,7 @@ void ScannerView::frequency_file_load(const fs::path& path) {
             def_step_index = entry.step;
 
         switch (entry.type) {
+            case freqman_type::Repeater:
             case freqman_type::Single:
                 entries.push_back({entry.frequency_a, entry.description});
                 break;

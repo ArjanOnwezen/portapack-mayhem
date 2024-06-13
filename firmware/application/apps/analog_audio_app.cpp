@@ -30,6 +30,7 @@
 #include "string_format.hpp"
 #include "ui_freqman.hpp"
 #include "utility.hpp"
+#include "radio.hpp"
 
 using namespace portapack;
 using namespace tonekey;
@@ -37,8 +38,6 @@ using namespace tonekey;
 namespace ui {
 
 /* AMOptionsView *********************************************************/
-
-static const Style& style_options_group = Styles::bg_blue;
 
 AMOptionsView::AMOptionsView(
     Rect parent_rect,
@@ -112,10 +111,14 @@ SPECOptionsView::SPECOptionsView(
     : View{parent_rect} {
     set_style(style);
 
-    add_children({&label_config,
-                  &options_config,
-                  &text_speed,
-                  &field_speed});
+    add_children({
+        &label_config,
+        &options_config,
+        &text_speed,
+        &field_speed,
+        &text_rx_cal,
+        &field_rx_iq_phase_cal,
+    });
 
     options_config.set_selected_index(view->get_spec_bw_index());
     options_config.on_change = [this, view](size_t n, OptionsField::value_t bw) {
@@ -126,6 +129,14 @@ SPECOptionsView::SPECOptionsView(
     field_speed.on_change = [this, view](int32_t v) {
         view->set_spec_trigger(v);
     };
+
+    field_rx_iq_phase_cal.set_range(0, hackrf_r9 ? 63 : 31);                       // max2839 has 6 bits [0..63],  max2837 has 5 bits [0..31]
+    field_rx_iq_phase_cal.set_value(view->get_spec_iq_phase_calibration_value());  // using  accessor function of AnalogAudioView to read iq_phase_calibration_value from rx_audio.ini
+    field_rx_iq_phase_cal.on_change = [this, view](int32_t v) {
+        view->set_spec_iq_phase_calibration_value(v);  // using  accessor function of AnalogAudioView to write inside SPEC submenu, register value to max283x and save it to rx_audio.ini
+    };
+
+    view->set_spec_iq_phase_calibration_value(view->get_spec_iq_phase_calibration_value());  // initialize iq_phase_calibration in radio
 }
 
 /* AnalogAudioView *******************************************************/
@@ -195,7 +206,9 @@ AnalogAudioView::AnalogAudioView(
     NavigationView& nav,
     ReceiverModel::settings_t override)
     : AnalogAudioView(nav) {
+    // Settings to override when launched from another app (versus from AppSettings .ini file)
     // TODO: Which other settings make sense to override?
+    field_frequency.set_value(override.frequency_app_override);
     on_frequency_step_changed(override.frequency_step);
     options_modulation.set_by_value(toUType(override.mode));
 }
@@ -211,6 +224,15 @@ void AnalogAudioView::set_spec_bw(size_t index, uint32_t bw) {
     baseband::set_spectrum(bw, spec_trigger);
     receiver_model.set_sampling_rate(bw);
     receiver_model.set_baseband_bandwidth(bw / 2);
+}
+
+uint8_t AnalogAudioView::get_spec_iq_phase_calibration_value() {  // define accessor functions inside AnalogAudioView to read & write real iq_phase_calibration_value
+    return iq_phase_calibration_value;
+}
+
+void AnalogAudioView::set_spec_iq_phase_calibration_value(uint8_t cal_value) {  // define accessor functions
+    iq_phase_calibration_value = cal_value;
+    radio::set_rx_max283x_iq_phase_calibration(iq_phase_calibration_value);
 }
 
 uint16_t AnalogAudioView::get_spec_trigger() {
@@ -273,13 +295,13 @@ void AnalogAudioView::set_options_widget(std::unique_ptr<Widget> new_widget) {
         options_widget = std::move(new_widget);
     } else {
         // TODO: Lame hack to hide options view due to my bad paint/damage algorithm.
-        options_widget = std::make_unique<Rectangle>(options_view_rect, style_options_group.background);
+        options_widget = std::make_unique<Rectangle>(options_view_rect, Theme::getInstance()->option_active->background);
     }
     add_child(options_widget.get());
 }
 
 void AnalogAudioView::on_show_options_frequency() {
-    auto widget = std::make_unique<FrequencyOptionsView>(options_view_rect, &style_options_group);
+    auto widget = std::make_unique<FrequencyOptionsView>(options_view_rect, Theme::getInstance()->option_active);
 
     widget->set_step(receiver_model.frequency_step());
     widget->on_change_step = [this](rf::Frequency f) {
@@ -291,14 +313,14 @@ void AnalogAudioView::on_show_options_frequency() {
     };
 
     set_options_widget(std::move(widget));
-    field_frequency.set_style(&style_options_group);
+    field_frequency.set_style(Theme::getInstance()->option_active);
 }
 
 void AnalogAudioView::on_show_options_rf_gain() {
-    auto widget = std::make_unique<RadioGainOptionsView>(options_view_rect, &style_options_group);
+    auto widget = std::make_unique<RadioGainOptionsView>(options_view_rect, Theme::getInstance()->option_active);
 
     set_options_widget(std::move(widget));
-    field_lna.set_style(&style_options_group);
+    field_lna.set_style(Theme::getInstance()->option_active);
 }
 
 void AnalogAudioView::on_show_options_modulation() {
@@ -307,25 +329,25 @@ void AnalogAudioView::on_show_options_modulation() {
     const auto modulation = receiver_model.modulation();
     switch (modulation) {
         case ReceiverModel::Mode::AMAudio:
-            widget = std::make_unique<AMOptionsView>(options_view_rect, &style_options_group);
+            widget = std::make_unique<AMOptionsView>(options_view_rect, Theme::getInstance()->option_active);
             waterfall.show_audio_spectrum_view(false);
             text_ctcss.hidden(true);
             break;
 
         case ReceiverModel::Mode::NarrowbandFMAudio:
-            widget = std::make_unique<NBFMOptionsView>(nbfm_view_rect, &style_options_group);
+            widget = std::make_unique<NBFMOptionsView>(nbfm_view_rect, Theme::getInstance()->option_active);
             waterfall.show_audio_spectrum_view(false);
             text_ctcss.hidden(false);
             break;
 
         case ReceiverModel::Mode::WidebandFMAudio:
-            widget = std::make_unique<WFMOptionsView>(options_view_rect, &style_options_group);
+            widget = std::make_unique<WFMOptionsView>(options_view_rect, Theme::getInstance()->option_active);
             waterfall.show_audio_spectrum_view(true);
             text_ctcss.hidden(true);
             break;
 
         case ReceiverModel::Mode::SpectrumAnalysis:
-            widget = std::make_unique<SPECOptionsView>(this, nbfm_view_rect, &style_options_group);
+            widget = std::make_unique<SPECOptionsView>(this, nbfm_view_rect, Theme::getInstance()->option_active);
             waterfall.show_audio_spectrum_view(false);
             text_ctcss.hidden(true);
             break;
@@ -336,7 +358,7 @@ void AnalogAudioView::on_show_options_modulation() {
     }
 
     set_options_widget(std::move(widget));
-    options_modulation.set_style(&style_options_group);
+    options_modulation.set_style(Theme::getInstance()->option_active);
 }
 
 void AnalogAudioView::on_frequency_step_changed(rf::Frequency f) {

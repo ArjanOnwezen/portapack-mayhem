@@ -25,9 +25,11 @@
 #include <cstdint>
 #include <cstddef>
 #include <array>
+#include <cstring>
 
 #include "hal.h"
 #include "gpdma.hpp"
+#include "tone_gen.hpp"
 
 using namespace lpc43xx;
 
@@ -35,6 +37,8 @@ using namespace lpc43xx;
 
 namespace audio {
 namespace dma {
+
+ToneGen tone_gen{};
 
 constexpr uint32_t gpdma_ahb_master_peripheral = 1;
 constexpr uint32_t gpdma_ahb_master_memory = 0;
@@ -123,10 +127,10 @@ constexpr gpdma::channel::Config config_rx() {
 /* TODO: Clean up terminology around "buffer", "transfer", "samples" */
 
 constexpr size_t buffer_samples_log2n = 7;
-constexpr size_t buffer_samples = (1 << buffer_samples_log2n);
+constexpr size_t buffer_samples = (1 << buffer_samples_log2n);  // 2^7 = 128 byte circular DMA buffer
 constexpr size_t transfers_per_buffer_log2n = 2;
-constexpr size_t transfers_per_buffer = (1 << transfers_per_buffer_log2n);
-constexpr size_t transfer_samples = buffer_samples / transfers_per_buffer;
+constexpr size_t transfers_per_buffer = (1 << transfers_per_buffer_log2n);  // 2^2 = 4 transfer buffers in the circular buffer
+constexpr size_t transfer_samples = buffer_samples / transfers_per_buffer;  // 128/4 = 32 samples in each transfer buffer
 constexpr size_t transfers_mask = transfers_per_buffer - 1;
 
 constexpr size_t buffer_bytes = buffer_samples * sizeof(sample_t);
@@ -144,8 +148,15 @@ static constexpr auto& gpdma_channel_i2s0_rx = gpdma::channels[portapack::i2s0_r
 static volatile const gpdma::channel::LLI* tx_next_lli = nullptr;
 static volatile const gpdma::channel::LLI* rx_next_lli = nullptr;
 
+static bool single_tx_buffer = false;
+static uint32_t beep_duration_downcounter = 0;
+
 static void tx_transfer_complete() {
     tx_next_lli = gpdma_channel_i2s0_tx.next_lli();
+
+    if (beep_duration_downcounter != 0)
+        if (--beep_duration_downcounter == 0)
+            beep_stop();
 }
 
 static void tx_error() {
@@ -158,14 +169,6 @@ static void rx_transfer_complete() {
 
 static void rx_error() {
     disable();
-}
-
-void init() {
-    gpdma_channel_i2s0_tx.set_handlers(tx_transfer_complete, tx_error);
-    gpdma_channel_i2s0_rx.set_handlers(rx_transfer_complete, rx_error);
-
-    // LPC_GPDMA->SYNC |= (1 << gpdma_rx_peripheral);
-    // LPC_GPDMA->SYNC |= (1 << gpdma_tx_peripheral);
 }
 
 static void configure_tx() {
@@ -192,20 +195,30 @@ static void configure_rx() {
     }
 }
 
-void configure() {
-    configure_tx();
-    configure_rx();
+static void enable_tx() {
+    const auto gpdma_config_tx = config_tx();
+    gpdma_channel_i2s0_tx.configure(lli_tx_loop[0], gpdma_config_tx);
+    gpdma_channel_i2s0_tx.enable();
 }
 
-void enable() {
-    const auto gpdma_config_tx = config_tx();
+static void enable_rx() {
     const auto gpdma_config_rx = config_rx();
-
-    gpdma_channel_i2s0_tx.configure(lli_tx_loop[0], gpdma_config_tx);
     gpdma_channel_i2s0_rx.configure(lli_rx_loop[0], gpdma_config_rx);
-
-    gpdma_channel_i2s0_tx.enable();
     gpdma_channel_i2s0_rx.enable();
+}
+
+void init_audio_out() {
+    gpdma_channel_i2s0_tx.set_handlers(tx_transfer_complete, tx_error);
+    // LPC_GPDMA->SYNC |= (1 << gpdma_tx_peripheral);
+    configure_tx();
+    enable_tx();
+}
+
+void init_audio_in() {
+    gpdma_channel_i2s0_rx.set_handlers(rx_transfer_complete, rx_error);
+    // LPC_GPDMA->SYNC |= (1 << gpdma_rx_peripheral);
+    configure_rx();
+    enable_rx();
 }
 
 void disable() {
@@ -213,11 +226,61 @@ void disable() {
     gpdma_channel_i2s0_rx.disable();
 }
 
+void shrink_tx_buffer(bool shrink) {
+    single_tx_buffer = shrink;
+
+    if (transfers_per_buffer == 1)
+        return;
+
+    if (single_tx_buffer)
+        lli_tx_loop[0].lli = lli_pointer(&lli_tx_loop[0]);
+    else
+        lli_tx_loop[0].lli = lli_pointer(&lli_tx_loop[1]);
+}
+
+void beep_start(uint32_t freq, uint32_t sample_rate, uint32_t beep_duration_ms) {
+    // Prevent divide-by-0
+    if (freq == 0 || sample_rate == 0)
+        return;
+
+    // Fill entire buffer with sine waves
+    tone_gen.configure_beep(freq, sample_rate);
+    for (size_t i = 0; i < buffer_samples; i++)
+        buffer_tx[i].left = buffer_tx[i].right = tone_gen.process_beep();
+
+    // Try to adjust DMA transfer count to align with full sine waves for a better tone
+    float samples_per_sine_wave = float(sample_rate) / freq;
+    uint32_t sine_waves_per_buffer = buffer_samples / samples_per_sine_wave;
+    size_t sample_count = (sine_waves_per_buffer == 0) ? buffer_samples : sine_waves_per_buffer * samples_per_sine_wave + 0.5;
+
+    // Use single larger transfer buffer with sample count determined above
+    lli_tx_loop[0].lli = lli_pointer(&lli_tx_loop[0]);
+    lli_tx_loop[0].control = control_tx(sample_count * sizeof(sample_t));
+
+    // Convert duration ms to number of buffers to send before stopping
+    // NB: beep_duration_ms==0 means beep continuously until stopped
+    uint32_t beep_interrupt_count = beep_duration_ms * sample_rate / (1000 * sample_count);
+    if ((beep_duration_ms != 0) && (beep_interrupt_count == 0))
+        beep_interrupt_count = 1;
+    beep_duration_downcounter = beep_interrupt_count;
+}
+
+void beep_stop() {
+    // Clear audio DMA buffer
+    memset(&buffer_tx, 0, buffer_bytes);
+
+    // Restore DMA linked list to use multiple smaller buffers
+    lli_tx_loop[0].control = control_tx(transfer_bytes);
+    if (!single_tx_buffer && (transfers_per_buffer > 1)) {
+        lli_tx_loop[0].lli = lli_pointer(&lli_tx_loop[1]);
+    }
+}
+
 buffer_t tx_empty_buffer() {
     const auto next_lli = tx_next_lli;
     if (next_lli) {
         const size_t next_index = next_lli - &lli_tx_loop[0];
-        const size_t free_index = (next_index + transfers_per_buffer - 2) & transfers_mask;
+        const size_t free_index = (single_tx_buffer) ? 0 : (next_index + transfers_per_buffer - 2) & transfers_mask;
         return {reinterpret_cast<sample_t*>(lli_tx_loop[free_index].srcaddr), transfer_samples};
     } else {
         return {nullptr, 0};

@@ -36,10 +36,11 @@
 
 #include "log_file.hpp"
 #include "utility.hpp"
+#include "file_path.hpp"
 
 class APRSLogger {
    public:
-    Optional<File::Error> append(const std::string& filename) {
+    Optional<File::Error> append(const std::filesystem::path& filename) {
         return log_file.append(filename);
     }
 
@@ -221,7 +222,8 @@ class APRSRxView : public View {
         {{"NA ", 0},
          {"EUR", 1},
          {"AUS", 2},
-         {"NZ ", 3}}};
+         {"NZ ", 3},
+         {"ISS", 4}}};
 
     RxFrequencyField field_frequency{
         {3 * 8, 0 * 16},
@@ -231,7 +233,7 @@ class APRSRxView : public View {
     RecordView record_view{
         {0 * 8, 1 * 16, 30 * 8, 1 * 16},
         u"AFS_????.WAV",
-        u"APRS",
+        aprs_dir,
         RecordView::FileType::WAV,
         4096,
         4};
@@ -259,8 +261,8 @@ class APRSRXView : public View {
     APRSTableView view_table{nav_, view_rect};
 
     TabView tab_view{
-        {"Stream", Color::cyan(), &view_stream},
-        {"List", Color::yellow(), &view_table}};
+        {"Stream", Theme::getInstance()->fg_cyan->foreground, &view_stream},
+        {"List", Theme::getInstance()->fg_yellow->foreground, &view_table}};
 
     MessageHandlerRegistration message_handler_packet{
         Message::ID::APRSPacket,

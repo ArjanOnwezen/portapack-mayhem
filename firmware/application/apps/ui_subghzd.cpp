@@ -81,15 +81,14 @@ SubGhzDView::SubGhzDView(NavigationView& nav)
         recent.clear();
         recent_entries_view.set_dirty();
     };
-    field_frequency.set_step(100000);
+    field_frequency.set_step(10000);
 
     const Rect content_rect{0, header_height, screen_width, screen_height - header_height};
     recent_entries_view.set_parent_rect(content_rect);
     recent_entries_view.on_select = [this](const SubGhzDRecentEntry& entry) {
         nav_.push<SubGhzDRecentEntryDetailView>(entry);
     };
-    baseband::set_subghzd(0);  // am
-    receiver_model.set_sampling_rate(4'000'000);
+    baseband::set_subghzd_config(0, receiver_model.sampling_rate());  // 0=am
     receiver_model.enable();
     signal_token_tick_second = rtc_time::signal_tick_second += [this]() {
         on_tick_second();

@@ -69,13 +69,13 @@ void RSSI::paint(Painter& painter) {
         const Rect r0{r.left(), r.top(), x_min, r.height()};
         painter.fill_rectangle(
             r0,
-            Color::blue());
+            Theme::getInstance()->fg_blue->foreground);
 
         // x_avg
         const Rect r1{r.left() + x_min, r.top(), x_avg - x_min, r.height()};
         painter.fill_rectangle(
             r1,
-            Color::red());
+            Theme::getInstance()->fg_red->foreground);
 
         // x_avg middle marker
         const Rect r2{r.left() + x_avg, r.top(), 1, r.height()};
@@ -87,20 +87,20 @@ void RSSI::paint(Painter& painter) {
         const Rect r3{r.left() + x_avg + 1, r.top(), x_max - (x_avg + 1), r.height()};
         painter.fill_rectangle(
             r3,
-            Color::red());
+            Theme::getInstance()->fg_red->foreground);
 
         // filling last part in black
         const Rect r4{r.left() + x_max, r.top(), r.width() - x_max, r.height()};
         painter.fill_rectangle(
             r4,
-            Color::black());
+            Theme::getInstance()->bg_darkest->background);
 
         // show green peak value
         if (peak_enabled) {
             const Rect r5{r.left() + peak - 3, r.top(), 3, r.height()};
             painter.fill_rectangle(
                 r5,
-                Color::green());
+                Theme::getInstance()->fg_green->foreground);
         }
     } else {
         // vertical bottom to top level meters
@@ -163,19 +163,19 @@ void RSSI::paint(Painter& painter) {
     }
 }
 
-int16_t RSSI::get_min() {
+uint8_t RSSI::get_min() {
     return min_;
 }
 
-int16_t RSSI::get_avg() {
+uint8_t RSSI::get_avg() {
     return avg_;
 }
 
-int16_t RSSI::get_max() {
+uint8_t RSSI::get_max() {
     return max_;
 }
 
-int16_t RSSI::get_delta() {
+uint8_t RSSI::get_delta() {
     return max_ - min_;
 }
 
@@ -213,19 +213,19 @@ void RSSI::on_statistics_update(const RSSIStatistics& statistics) {
     set_dirty();
 }
 
-int16_t RSSIGraph::get_graph_min() {
+uint8_t RSSIGraph::get_graph_min() {
     return graph_min_;
 }
 
-int16_t RSSIGraph::get_graph_avg() {
+uint8_t RSSIGraph::get_graph_avg() {
     return graph_avg_;
 }
 
-int16_t RSSIGraph::get_graph_max() {
+uint8_t RSSIGraph::get_graph_max() {
     return graph_max_;
 }
 
-int16_t RSSIGraph::get_graph_delta() {
+uint8_t RSSIGraph::get_graph_delta() {
     return graph_max_ - graph_min_;
 }
 

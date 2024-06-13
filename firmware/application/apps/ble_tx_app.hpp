@@ -36,6 +36,7 @@
 #include "replay_thread.hpp"
 #include "log_file.hpp"
 #include "utility.hpp"
+#include "file_path.hpp"
 
 #include "recent_entries.hpp"
 
@@ -44,7 +45,7 @@
 
 class BLELoggerTx {
    public:
-    Optional<File::Error> append(const std::string& filename) {
+    Optional<File::Error> append(const std::filesystem::path& filename) {
         return log_file.append(filename);
     }
 
@@ -138,7 +139,7 @@ class BLETxView : public View {
     uint32_t prev_value{0};
 
     std::filesystem::path file_path{};
-    std::filesystem::path packet_save_path{u"BLETX/BLETX_????.TXT"};
+    std::filesystem::path packet_save_path{bletx_dir / u"BLETX_????.TXT"};
     uint8_t channel_number = 37;
     bool auto_channel = false;
 
@@ -165,7 +166,7 @@ class BLETxView : public View {
 
     std::unique_ptr<FileWrapper> dataFileWrapper{};
     File dataFile{};
-    std::filesystem::path dataTempFilePath{u"BLETX/dataFileTemp.TXT"};
+    std::filesystem::path dataTempFilePath{bletx_dir / u"dataFileTemp.TXT"};
     std::vector<uint16_t> markedBytes{};
     CursorPos cursor_pos{};
     uint8_t marked_counter = 0;
@@ -217,11 +218,11 @@ class BLETxView : public View {
     ImageButton button_play{
         {28 * 8, 2 * 16, 2 * 8, 1 * 16},
         &bitmap_play,
-        Color::green(),
-        Color::black()};
+        Theme::getInstance()->fg_green->foreground,
+        Theme::getInstance()->fg_green->background};
 
     Labels label_speed{
-        {{0 * 8, 6 * 8}, "Speed:", Color::light_grey()}};
+        {{0 * 8, 6 * 8}, "Speed:", Theme::getInstance()->fg_light->foreground}};
 
     OptionsField options_speed{
         {7 * 8, 6 * 8},
@@ -253,7 +254,7 @@ class BLETxView : public View {
          {"CONNECT_REQ", PKT_TYPE_CONNECT_REQ}}};
 
     Labels label_marked_data{
-        {{0 * 8, 4 * 16}, "Marked Data:", Color::light_grey()}};
+        {{0 * 8, 4 * 16}, "Marked Data:", Theme::getInstance()->fg_light->foreground}};
 
     OptionsField marked_data_sequence{
         {12 * 8, 8 * 8},
@@ -263,28 +264,28 @@ class BLETxView : public View {
          {"Random", 2}}};
 
     Labels label_packet_index{
-        {{0 * 8, 12 * 8}, "Packet Index:", Color::light_grey()}};
+        {{0 * 8, 12 * 8}, "Packet Index:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_packet_index{
         {13 * 8, 6 * 16, 12 * 8, 16},
         "-"};
 
     Labels label_packets_sent{
-        {{0 * 8, 14 * 8}, "Repeat Count:", Color::light_grey()}};
+        {{0 * 8, 14 * 8}, "Repeat Count:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_packets_sent{
         {13 * 8, 7 * 16, 12 * 8, 16},
         "-"};
 
     Labels label_mac_address{
-        {{0 * 8, 16 * 8}, "Mac Address:", Color::light_grey()}};
+        {{0 * 8, 16 * 8}, "Mac Address:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_mac_address{
         {12 * 8, 8 * 16, 20 * 8, 16},
         "-"};
 
     Labels label_data_packet{
-        {{0 * 8, 9 * 16}, "Packet Data:", Color::light_grey()}};
+        {{0 * 8, 9 * 16}, "Packet Data:", Theme::getInstance()->fg_light->foreground}};
 
     Console console{
         {0, 9 * 18, 240, 240}};

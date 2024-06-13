@@ -20,9 +20,11 @@
  */
 
 #include "ais_app.hpp"
+#include "audio.hpp"
 
 #include "string_format.hpp"
 #include "database.hpp"
+#include "file_path.hpp"
 
 #include "baseband_api.hpp"
 
@@ -30,6 +32,8 @@
 using namespace portapack;
 
 #include <algorithm>
+
+namespace pmem = portapack::persistent_memory;
 
 namespace ais {
 namespace format {
@@ -64,9 +68,9 @@ static std::string mmsi(
 
 static std::string mid(
     const ais::MMSI& mmsi) {
-    std::database db;
+    database db;
     std::string mid_code = "";
-    std::database::MidDBRecord mid_record = {};
+    database::MidDBRecord mid_record = {};
     int return_code = 0;
 
     // Try getting the country name from mids.db using MID code for given MMSI
@@ -189,6 +193,10 @@ void AISLogger::on_packet(const ais::Packet& packet) {
     }
 
     log_file.write_entry(packet.received_at(), entry);
+
+    if (pmem::beep_on_packets()) {
+        baseband::request_audio_beep(1000, 24000, 60);
+    }
 }
 
 void AISRecentEntry::update(const ais::Packet& packet) {
@@ -293,6 +301,7 @@ AISRecentEntryDetailView::AISRecentEntryDetailView(NavigationView& nav) {
             ais::format::text(entry_.name),
             0,
             GeoPos::alt_unit::METERS,
+            GeoPos::spd_unit::NONE,
             ais::format::latlon_float(entry_.last_position.latitude.normalized()),
             ais::format::latlon_float(entry_.last_position.longitude.normalized()),
             entry_.last_position.true_heading,
@@ -315,7 +324,7 @@ AISRecentEntryDetailView& AISRecentEntryDetailView::operator=(const AISRecentEnt
 
 void AISRecentEntryDetailView::update_position() {
     if (send_updates)
-        geomap_view->update_position(ais::format::latlon_float(entry_.last_position.latitude.normalized()), ais::format::latlon_float(entry_.last_position.longitude.normalized()), (float)entry_.last_position.true_heading, 0);
+        geomap_view->update_position(ais::format::latlon_float(entry_.last_position.latitude.normalized()), ais::format::latlon_float(entry_.last_position.longitude.normalized()), (float)entry_.last_position.true_heading, 0, entry_.last_position.speed_over_ground);
 }
 
 void AISRecentEntryDetailView::focus() {
@@ -375,6 +384,7 @@ AISAppView::AISAppView(NavigationView& nav)
         &field_lna,
         &field_vga,
         &rssi,
+        &field_volume,
         &channel,
         &recent_entries_view,
         &recent_entry_detail_view,
@@ -398,11 +408,17 @@ AISAppView::AISAppView(NavigationView& nav)
 
     logger = std::make_unique<AISLogger>();
     if (logger) {
-        logger->append(LOG_ROOT_DIR "/AIS.TXT");
+        logger->append(logs_dir / u"AIS.TXT");
+    }
+
+    if (pmem::beep_on_packets()) {
+        audio::set_rate(audio::Rate::Hz_24000);
+        audio::output::start();
     }
 }
 
 AISAppView::~AISAppView() {
+    audio::output::stop();
     receiver_model.disable();
     baseband::shutdown();
 }

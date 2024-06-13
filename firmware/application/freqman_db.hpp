@@ -36,7 +36,6 @@
 #include <vector>
 
 /* Defined in freqman_db.cpp */
-extern const std::filesystem::path freqman_dir;
 extern const std::filesystem::path freqman_extension;
 
 using freqman_index_t = uint8_t;
@@ -56,6 +55,7 @@ enum class freqman_type : uint8_t {
     Single,    // f=
     Range,     // a=,b=
     HamRadio,  // r=,t=
+    Repeater,  // l=,t=
     Raw,       // line content in description
     Unknown,
 };
@@ -161,12 +161,16 @@ std::string freqman_entry_get_step_string_short(freqman_index_t step);
  * ensure app memory stability. */
 constexpr size_t freqman_default_max_entries = 150;
 
+/* Limiting description to 30 as specified by the format */
+constexpr size_t freqman_max_desc_size = 30;
+
 struct freqman_load_options {
     /* Loads all entries when set to 0. */
     size_t max_entries{freqman_default_max_entries};
     bool load_freqs{true};
     bool load_ranges{true};
     bool load_hamradios{true};
+    bool load_repeaters{true};
 };
 
 using freqman_entry_ptr = std::unique_ptr<freqman_entry>;

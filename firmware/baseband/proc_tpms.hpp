@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
+ * Copyright (C) 2023 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -138,6 +139,9 @@ class TPMSProcessor : public BasebandProcessor {
             const TPMSPacketMessage message{tpms::SignalType::OOK_8k4_Schrader, packet};
             shared_memory.application_queue.push(message);
         }};
+
+    void on_message(const Message* const message);
+    void on_beep_message(const AudioBeepMessage& message);
 
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{

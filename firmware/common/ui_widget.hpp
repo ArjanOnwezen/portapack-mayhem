@@ -33,6 +33,8 @@
 #include "portapack.hpp"
 #include "utility.hpp"
 
+#include "ui/ui_font_fixed_5x8.hpp"
+
 #include <functional>
 #include <memory>
 #include <string>
@@ -101,9 +103,13 @@ class Widget {
     virtual bool on_key(const KeyEvent event);
     virtual bool on_encoder(const EncoderEvent event);
     virtual bool on_touch(const TouchEvent event);
+    virtual bool on_keyboard(const KeyboardEvent event);
     virtual const std::vector<Widget*>& children() const;
 
     virtual Context& context() const;
+
+    virtual void getAccessibilityText(std::string& result);
+    virtual void getWidgetName(std::string& result);
 
     void set_style(const Style* new_style);
 
@@ -206,6 +212,8 @@ class Text : public Widget {
     void set(std::string_view value);
 
     void paint(Painter& painter) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    protected:
     // NB: Don't truncate this string. The UI will only render
@@ -233,6 +241,8 @@ class Labels : public Widget {
     void set_labels(std::initializer_list<Label> labels);
 
     void paint(Painter& painter) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     std::vector<Label> labels_;
@@ -311,6 +321,8 @@ class ProgressBar : public Widget {
     void set_value(const uint32_t value);
 
     void paint(Painter& painter) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     uint32_t _value = 0;
@@ -344,6 +356,8 @@ class Console : public Widget {
     void enable_scrolling(bool enable);
     void on_show() override;
     void on_hide() override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     Point pos{0, 0};
@@ -382,7 +396,10 @@ class Checkbox : public Widget {
     void paint(Painter& painter) override;
 
     bool on_key(const KeyEvent key) override;
+    bool on_keyboard(const KeyboardEvent key) override;
     bool on_touch(const TouchEvent event) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     std::string text_;
@@ -418,6 +435,9 @@ class Button : public Widget {
     void on_focus() override;
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     std::string text_;
@@ -456,6 +476,10 @@ class ButtonWithEncoder : public Widget {
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
     bool on_encoder(const EncoderEvent delta) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     std::string text_;
@@ -482,6 +506,7 @@ class NewButton : public Widget {
     void set_bitmap(const Bitmap* bitmap);
     void set_text(const std::string value);
     void set_color(Color value);
+    void set_bg_color(Color value);
     void set_vertical_center(bool value);
     std::string text() const;
     const Bitmap* bitmap();
@@ -490,12 +515,17 @@ class NewButton : public Widget {
     void on_focus() override;
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
     void paint(Painter& painter) override;
 
    protected:
     virtual Style paint_style();
     Color color_;
+    Color bg_color_{Theme::getInstance()->bg_medium->background};
 
    private:
     std::string text_;
@@ -544,6 +574,9 @@ class ImageButton : public Image {
 
     bool on_key(const KeyEvent key) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 };
 
 /* A button that toggles between two images when set. */
@@ -577,6 +610,9 @@ class ImageToggle : public ImageButton {
     bool value() const;
     void set_value(bool b);
 
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
+
    private:
     // Hide this field.
     using ImageButton::on_select;
@@ -605,7 +641,7 @@ class ImageOptionsField : public Widget {
         options_t options);
 
     ImageOptionsField()
-        : ImageOptionsField{{}, Color::white(), Color::black(), {}} {
+        : ImageOptionsField{{}, Theme::getInstance()->bg_darkest->foreground, Theme::getInstance()->bg_darkest->background, {}} {
     }
 
     void set_options(options_t new_options);
@@ -621,6 +657,9 @@ class ImageOptionsField : public Widget {
     void on_focus() override;
     bool on_encoder(const EncoderEvent delta) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     options_t options;
@@ -658,6 +697,10 @@ class OptionsField : public Widget {
     void on_focus() override;
     bool on_encoder(const EncoderEvent delta) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     const size_t length_;
@@ -702,6 +745,10 @@ class TextEdit : public Widget {
     bool on_key(const KeyEvent key) override;
     bool on_encoder(const EncoderEvent delta) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
     void on_focus() override;
     void on_blur() override;
@@ -729,14 +776,64 @@ class TextField : public Text {
     bool on_encoder(EncoderEvent delta) override;
     bool on_touch(TouchEvent event) override;
 
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
+
    private:
     using Text::set;
+};
+
+class BatteryTextField : public Widget {
+   public:
+    std::function<void()> on_select{};
+
+    BatteryTextField(Rect parent_rect, uint8_t percent);
+    void paint(Painter& painter) override;
+
+    void set_battery(uint8_t percentage, bool charge);
+    void set_text(std::string_view value);
+
+    bool on_key(KeyEvent key) override;
+    bool on_touch(TouchEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
+
+   private:
+    uint8_t percent_{102};
+    bool charge_{false};
+
+    Style style{
+        .font = font::fixed_5x8,
+        .background = Theme::getInstance()->bg_dark->background,
+        .foreground = Theme::getInstance()->bg_dark->foreground,
+    };
+};
+
+class BatteryIcon : public Widget {
+   public:
+    std::function<void()> on_select{};
+
+    BatteryIcon(Rect parent_rect, uint8_t percent);
+    void paint(Painter& painter) override;
+    void set_battery(uint8_t percentage, bool charge);
+
+    bool on_key(KeyEvent key) override;
+    bool on_touch(TouchEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
+
+   private:
+    uint8_t percent_{102};
+    bool charge_{false};
 };
 
 class NumberField : public Widget {
    public:
     std::function<void(NumberField&)> on_select{};
     std::function<void(int32_t)> on_change{};
+    std::function<void(int32_t)> on_wrap{};
 
     using range_t = std::pair<int32_t, int32_t>;
 
@@ -763,6 +860,10 @@ class NumberField : public Widget {
     bool on_key(const KeyEvent key) override;
     bool on_encoder(const EncoderEvent delta) override;
     bool on_touch(const TouchEvent event) override;
+    bool on_keyboard(const KeyboardEvent event) override;
+
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
 
    private:
     range_t range;
@@ -839,6 +940,9 @@ class SymField : public Widget {
     bool on_encoder(EncoderEvent delta) override;
     bool on_touch(TouchEvent event) override;
 
+    void getAccessibilityText(std::string& result) override;
+    void getWidgetName(std::string& result) override;
+
    private:
     /* Ensure the specified symbol is in the symbol list. */
     char ensure_valid(char symbol) const;
@@ -876,7 +980,7 @@ class Waveform : public Widget {
     void paint(Painter& painter) override;
 
    private:
-    const Color cursor_colors[2] = {Color::cyan(), Color::magenta()};
+    const Color cursor_colors[2] = {Theme::getInstance()->fg_cyan->foreground, Theme::getInstance()->fg_magenta->foreground};
 
     int16_t* data_;
     uint32_t length_;

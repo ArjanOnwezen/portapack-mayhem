@@ -31,7 +31,7 @@
 namespace ui {
 
 struct fileman_entry {
-    std::filesystem::path path{};
+    std::string path{};
     uint32_t size{};
     bool is_directory{};
 };
@@ -61,8 +61,12 @@ class FileManBaseView : public View {
     void push_dir(const std::filesystem::path& path);
 
    protected:
-    static constexpr size_t max_filename_length = 64;
-    static constexpr size_t max_items_shown = 100;
+    uint32_t prev_highlight = 0;
+    uint8_t pagination = 0;
+    uint8_t nb_pages = 1;
+    static constexpr size_t max_filename_length = 20;
+    static constexpr size_t max_items_loaded = 75;  // too memory hungry, so won't sort it
+    static constexpr size_t items_per_page = 20;
 
     struct file_assoc_t {
         std::filesystem::path extension;
@@ -77,18 +81,20 @@ class FileManBaseView : public View {
         {u".C8", &bitmap_icon_file_iq, ui::Color::dark_cyan()},
         {u".C16", &bitmap_icon_file_iq, ui::Color::dark_cyan()},
         {u".WAV", &bitmap_icon_file_wav, ui::Color::dark_magenta()},
-        {u".PPL", &bitmap_icon_file_iq, ui::Color::white()},  // Playlist/Replay
-        {u".REM", &bitmap_icon_remote, ui::Color::orange()},  // Remote
-        {u"", &bitmap_icon_file, ui::Color::light_grey()}     // NB: Must be last.
+        {u".PPL", &bitmap_icon_file_iq, ui::Color::white()},                  // Playlist/Replay
+        {u".REM", &bitmap_icon_remote, ui::Color::orange()},                  // Remote
+        {u"", &bitmap_icon_file, Theme::getInstance()->fg_light->foreground}  // NB: Must be last.
     };
 
     std::filesystem::path get_selected_full_path() const;
     const fileman_entry& get_selected_entry() const;
 
+    int file_count_filtered(const std::filesystem::path& directory);
     void pop_dir();
     void refresh_list();
-    void reload_current();
+    void reload_current(bool reset_pagination = false);
     void load_directory_contents(const std::filesystem::path& dir_path);
+    void load_directory_contents_unordered(const std::filesystem::path& dir_path, size_t file_cnt);
     const file_assoc_t& get_assoc(const std::filesystem::path& ext) const;
 
     NavigationView& nav_;
@@ -97,17 +103,20 @@ class FileManBaseView : public View {
     std::function<void(KeyEvent)> on_select_entry{nullptr};
     std::function<void(bool)> on_refresh_widgets{nullptr};
 
+    const std::string str_back{"<--"};
+    const std::string str_next{"-->"};
+    const std::string str_full{"Can't load more.."};
     const std::filesystem::path parent_dir_path{u".."};
     std::filesystem::path current_path{u""};
     std::filesystem::path extension_filter{u""};
 
-    std::vector<fileman_entry> entry_list{};
+    std::list<fileman_entry> entry_list{};
     std::vector<uint32_t> saved_index_stack{};
 
     bool show_hidden_files{false};
 
     Labels labels{
-        {{0, 0}, "Path:", Color::light_grey()}};
+        {{0, 0}, "Path:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_current{
         {6 * 8, 0 * 8, 24 * 8, 16},
@@ -157,8 +166,8 @@ private:
         std::string buffer_ { };
 
         Labels labels {
-                { { 0 * 8, 1 * 16 }, "Path:", Color::light_grey() },
-                { { 0 * 8, 6 * 16 }, "Filename:", Color::light_grey() },
+                { { 0 * 8, 1 * 16 }, "Path:", Theme::getInstance()->fg_light->foreground },
+                { { 0 * 8, 6 * 16 }, "Filename:",Theme::getInstance()->fg_light->foreground },
         };
 
         Text text_path {
@@ -207,6 +216,7 @@ class FileManagerView : public FileManBaseView {
     void refresh_widgets(const bool v);
     void on_rename(std::string_view hint);
     void on_delete();
+    void on_clean();
     void on_paste();
     void on_new_dir();
     void on_new_file();
@@ -224,68 +234,76 @@ class FileManagerView : public FileManBaseView {
         {0 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_rename,
-        Color::dark_blue()};
+        Theme::getInstance()->fg_blue->foreground};
 
     NewButton button_delete{
-        {4 * 8, 29 * 8, 4 * 8, 32},
+        {9 * 8, 34 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_trash,
-        Color::red()};
+        Theme::getInstance()->fg_red->foreground};
+
+    NewButton button_clean{
+        {13 * 8, 34 * 8, 4 * 8, 32},
+        {},
+        &bitmap_icon_clean,
+        Theme::getInstance()->fg_red->foreground};
 
     NewButton button_cut{
         {9 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_cut,
-        Color::dark_grey()};
+        Theme::getInstance()->fg_dark->foreground};
 
     NewButton button_copy{
         {13 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_copy,
-        Color::dark_grey()};
+        Theme::getInstance()->fg_dark->foreground};
 
     NewButton button_paste{
         {17 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_paste,
-        Color::dark_grey()};
+        Theme::getInstance()->fg_dark->foreground};
 
     NewButton button_new_dir{
         {22 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_new_dir,
-        Color::green()};
+        Theme::getInstance()->fg_green->foreground};
 
     NewButton button_new_file{
         {26 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_new_file,
-        Color::green()};
+        Theme::getInstance()->fg_green->foreground};
 
     NewButton button_open_notepad{
         {0 * 8, 34 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_notepad,
-        Color::orange()};
+        Theme::getInstance()->fg_orange->foreground};
 
     NewButton button_rename_timestamp{
-        {4 * 8, 34 * 8, 4 * 8, 32},
+
+        {4 * 8, 29 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_options_datetime,
-        Color::orange(),
+        Theme::getInstance()->fg_blue->foreground,
         /*vcenter*/ true};
 
     NewButton button_open_iq_trim{
-        {9 * 8, 34 * 8, 4 * 8, 32},
+
+        {4 * 8, 34 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_trim,
-        Color::orange()};
+        Theme::getInstance()->fg_orange->foreground};
 
     NewButton button_show_hidden_files{
-        {13 * 8, 34 * 8, 4 * 8, 32},
+        {17 * 8, 34 * 8, 4 * 8, 32},
         {},
         &bitmap_icon_hide,
-        Color::dark_grey()};
+        Theme::getInstance()->fg_dark->foreground};
 };
 
 } /* namespace ui */

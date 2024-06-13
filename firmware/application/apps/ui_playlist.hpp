@@ -2,6 +2,7 @@
  * Copyright (C) 2016 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2016 Furrtek
  * Copyright (C) 2023 Kyle Reed, zxkmm
+ * Copyright (C) 2024 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -56,7 +57,7 @@ class PlaylistView : public View {
     NavigationView& nav_;
     TxRadioState radio_state_{};
     app_settings::SettingsManager settings_{
-        "tx_playlist", app_settings::Mode::TX};
+        "tx_replay", app_settings::Mode::TX};
 
     // More header == less spectrum view.
     static constexpr ui::Dim header_height = 6 * 16;
@@ -140,8 +141,8 @@ class PlaylistView : public View {
     ImageButton button_play{
         {28 * 8, 2 * 16, 2 * 8, 1 * 16},
         &bitmap_play,
-        Color::green(),
-        Color::black()};
+        Theme::getInstance()->fg_green->foreground,
+        Theme::getInstance()->fg_green->background};
 
     Text text_track{
         {0 * 8, 3 * 16, 30 * 8, 16}};
@@ -150,37 +151,37 @@ class PlaylistView : public View {
         {2 * 8, 4 * 16, 4 * 8, 2 * 16},
         "",
         &bitmap_arrow_left,
-        Color::dark_grey()};
+        Theme::getInstance()->bg_dark->background};
 
     NewButton button_next{
         {6 * 8, 4 * 16, 4 * 8, 2 * 16},
         "",
         &bitmap_arrow_right,
-        Color::dark_grey()};
+        Theme::getInstance()->bg_dark->background};
 
     NewButton button_add{
         {11 * 8, 4 * 16, 4 * 8, 2 * 16},
         "",
         &bitmap_icon_new_file,
-        Color::orange()};
+        Theme::getInstance()->fg_orange->foreground};
 
     NewButton button_delete{
         {15 * 8, 4 * 16, 4 * 8, 2 * 16},
         "",
         &bitmap_icon_delete,
-        Color::orange()};
+        Theme::getInstance()->fg_orange->foreground};
 
     NewButton button_open{
         {20 * 8, 4 * 16, 4 * 8, 2 * 16},
         "",
         &bitmap_icon_load,
-        Color::dark_blue()};
+        Theme::getInstance()->fg_blue->foreground};
 
     NewButton button_save{
         {24 * 8, 4 * 16, 4 * 8, 2 * 16},
         "",
         &bitmap_icon_save,
-        Color::dark_blue()};
+        Theme::getInstance()->fg_blue->foreground};
 
     spectrum::WaterfallView waterfall{};
 

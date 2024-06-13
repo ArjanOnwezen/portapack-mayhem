@@ -2,6 +2,7 @@
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2017 Furrtek
  * Copyright (C) 2023 Kyle Reed
+ * Copyright (C) 2024 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -53,6 +54,8 @@ namespace ui {
 #define AIRBORNE_POS_GPS_L 20  // airborne position (lowest type id)
 #define AIRBORNE_POS_GPS_H 22  // airborne position (highest type id)
 
+#define AIRBORNE_OP_STATUS 31  // Aircraft operation status
+
 #define RESERVED_L 23  // reserved for other uses
 #define RESERVED_H 31  // reserved for other uses
 
@@ -100,6 +103,8 @@ struct AircraftRecentEntry {
     std::string icao_str{};
     std::string callsign{};
     std::string info_string{};
+
+    uint8_t sil{0};  // Surveillance integrity level
 
     AircraftRecentEntry(const uint32_t ICAO_address)
         : ICAO_address{ICAO_address} {
@@ -172,6 +177,7 @@ struct ADSBLogEntry {
     adsb_pos pos{};
     adsb_vel vel{};
     uint8_t vel_type{};
+    uint8_t sil{};
 };
 
 // TODO: Make logging optional.
@@ -199,15 +205,15 @@ class ADSBRxAircraftDetailsView : public View {
 
    private:
     Labels labels{
-        {{0 * 8, 1 * 16}, "ICAO:", Color::light_grey()},
-        {{0 * 8, 2 * 16}, "Registration:", Color::light_grey()},
-        {{0 * 8, 3 * 16}, "Manufacturer:", Color::light_grey()},
-        {{0 * 8, 5 * 16}, "Model:", Color::light_grey()},
-        {{0 * 8, 7 * 16}, "Type:", Color::light_grey()},
-        {{0 * 8, 8 * 16}, "Number of engines:", Color::light_grey()},
-        {{0 * 8, 9 * 16}, "Engine type:", Color::light_grey()},
-        {{0 * 8, 11 * 16}, "Owner:", Color::light_grey()},
-        {{0 * 8, 13 * 16}, "Operator:", Color::light_grey()}};
+        {{0 * 8, 1 * 16}, "ICAO:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 2 * 16}, "Registration:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 3 * 16}, "Manufacturer:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 5 * 16}, "Model:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 7 * 16}, "Type:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 8 * 16}, "Number of engines:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 9 * 16}, "Engine type:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 11 * 16}, "Owner:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 13 * 16}, "Operator:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_icao_address{
         {5 * 8, 1 * 16, 6 * 8, 16},
@@ -271,6 +277,8 @@ class ADSBRxDetailsView : public View {
 
    private:
     void refresh_ui();
+    void on_gps(const GPSPosDataMessage* msg);
+    void on_orientation(const OrientationDataMessage* msg);
 
     GeoMapView* geomap_view_{nullptr};
     ADSBRxAircraftDetailsView* aircraft_details_view_{nullptr};
@@ -278,15 +286,16 @@ class ADSBRxDetailsView : public View {
     // NB: Keeping a copy so that it doesn't end up dangling
     // if removed from the recent entries list.
     AircraftRecentEntry entry_{AircraftRecentEntry::invalid_key};
+    bool airline_checked{false};
 
     Labels labels{
-        {{0 * 8, 1 * 16}, "ICAO:", Color::light_grey()},
-        {{13 * 8, 1 * 16}, "Callsign:", Color::light_grey()},
-        {{0 * 8, 2 * 16}, "Last seen:", Color::light_grey()},
-        {{0 * 8, 3 * 16}, "Airline:", Color::light_grey()},
-        {{0 * 8, 5 * 16}, "Country:", Color::light_grey()},
-        {{0 * 8, 13 * 16}, "Even position frame:", Color::light_grey()},
-        {{0 * 8, 15 * 16}, "Odd position frame:", Color::light_grey()}};
+        {{0 * 8, 1 * 16}, "ICAO:", Theme::getInstance()->fg_light->foreground},
+        {{13 * 8, 1 * 16}, "Callsign:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 2 * 16}, "Last seen:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 3 * 16}, "Airline:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 5 * 16}, "Country:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 13 * 16}, "Even position frame:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 15 * 16}, "Odd position frame:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_icao_address{
         {5 * 8, 1 * 16, 6 * 8, 16},
@@ -330,6 +339,19 @@ class ADSBRxDetailsView : public View {
     Button button_see_map{
         {16 * 8, 9 * 16, 12 * 8, 3 * 16},
         "See on map"};
+
+    MessageHandlerRegistration message_handler_gps{
+        Message::ID::GPSPosData,
+        [this](Message* const p) {
+            const auto message = static_cast<const GPSPosDataMessage*>(p);
+            this->on_gps(message);
+        }};
+    MessageHandlerRegistration message_handler_orientation{
+        Message::ID::OrientationData,
+        [this](Message* const p) {
+            const auto message = static_cast<const OrientationDataMessage*>(p);
+            this->on_orientation(message);
+        }};
 };
 
 /* Main ADSB application view and message dispatch. */
@@ -392,7 +414,7 @@ class ADSBRxView : public View {
     ADSBRxDetailsView* details_view{nullptr};
 
     Labels labels{
-        {{0 * 8, 0 * 8}, "LNA:   VGA:   AMP:", Color::light_grey()}};
+        {{0 * 8, 0 * 8}, "LNA:   VGA:   AMP:", Theme::getInstance()->fg_light->foreground}};
 
     LNAGainField field_lna{
         {4 * 8, 0 * 16}};
@@ -404,18 +426,21 @@ class ADSBRxView : public View {
         {18 * 8, 0 * 16}};
 
     RSSI rssi{
-        {20 * 8, 4, 10 * 7, 8},
+        {20 * 8, 4, 7 * 8, 8},
     };
 
     ActivityDot status_frame{
-        {screen_width - 3, 5, 2, 2},
-        Color::white(),
+        {27 * 8 + 2, 5, 2, 2},
+        Theme::getInstance()->bg_darkest->foreground,
     };
 
     ActivityDot status_good_frame{
-        {screen_width - 3, 9, 2, 2},
-        Color::green(),
+        {27 * 8 + 2, 9, 2, 2},
+        Theme::getInstance()->fg_green->foreground,
     };
+
+    AudioVolumeField field_volume{
+        {28 * 8, 0 * 16}};
 
     MessageHandlerRegistration message_handler_frame{
         Message::ID::ADSBFrame,

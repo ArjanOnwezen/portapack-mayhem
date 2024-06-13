@@ -1,5 +1,8 @@
 /*
  * Copyright (C) 2014 Jared Boone, ShareBrained Technology, Inc.
+ * Copyleft (ɔ) 2024 zxkmm under GPL license
+ * Copyright (C) 2024 u-foka
+ * Copyright (C) 2024 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -29,6 +32,23 @@
 #include "platform.hpp"
 #include "gpio.hpp"
 #include "ui.hpp"
+
+// #include "portapack_persistent_memory.hpp"
+
+// Darkened pixel bit mask for each possible shift value.
+static const uint16_t darken_mask[4] = {
+    0b1111111111111111,  // RrrrrGgggggBbbbb
+    0b0111101111101111,  // 0Rrrr0Ggggg0Bbbb
+    0b0011100111100111,  // 00Rrr00Gggg00Bbb
+    0b0001100011100011   // 000Rr000Ggg000Bb
+};
+
+// To darken, dividing each color level R/G/B by 2^shift.
+#define DARKENED_PIXEL(pixel, shift) ((pixel >> shift) & darken_mask[shift])
+
+// To un-darken, multiply each color level by 2^shift (might still be darker that before since some bits may have been lost above).
+// This function will only be called when the pixel has previously been darkened, so no masking is needed.
+#define UNDARKENED_PIXEL(pixel, shift) (pixel << shift)
 
 namespace portapack {
 
@@ -141,7 +161,10 @@ class IO {
         }
     }
 
-    void lcd_write_pixel(const ui::Color pixel) {
+    void lcd_write_pixel(ui::Color pixel) {
+        if (get_dark_cover()) {
+            pixel.v = DARKENED_PIXEL(pixel.v, get_brightness());
+        }
         lcd_write_data(pixel.v);
     }
 
@@ -149,13 +172,19 @@ class IO {
         return lcd_read_data();
     }
 
-    void lcd_write_pixels(const ui::Color pixel, size_t n) {
+    void lcd_write_pixels(ui::Color pixel, size_t n) {
+        if (get_dark_cover()) {
+            pixel.v = DARKENED_PIXEL(pixel.v, get_brightness());
+        }
         while (n--) {
             lcd_write_data(pixel.v);
         }
     }
 
-    void lcd_write_pixels_unrolled8(const ui::Color pixel, size_t n) {
+    void lcd_write_pixels_unrolled8(ui::Color pixel, size_t n) {
+        if (get_dark_cover()) {
+            pixel.v = DARKENED_PIXEL(pixel.v, get_brightness());
+        }
         auto v = pixel.v;
         n >>= 3;
         while (n--) {
@@ -202,6 +231,10 @@ class IO {
 
         return switches_raw;
     }
+
+    bool get_dark_cover();
+    uint8_t get_brightness();
+    // TODO: cache the value ^^ & ^ to increaase performance, need a trigger cuz init doesn't work. And since the constructor is constexpr, we can't use with in class var to cache it. maybe cache from outside somewhere and pass it here as argument.
 
     uint32_t io_update(const TouchPinsConfig write_value);
 
@@ -314,6 +347,42 @@ class IO {
         addr(1); /* Set up for data phase (most likely after a command) */
     }
 
+    // void high_contrast(ui::Color& pixel, size_t contrast_level_shift) {  // TODO
+    //     uint16_t r = (pixel.v >> 11) & 0x1F;
+    //     uint16_t g = (pixel.v >> 5) & 0x3F;
+    //     uint16_t b = pixel.v & 0x1F;
+    //
+    //     if ((r << contrast_level_shift) > 0x1F) {  // should be slightly smaller, need more obverse...
+    //         r = 0x1F;
+    //     } else {
+    //         r = r << contrast_level_shift;
+    //     }
+    //
+    //     if ((g << contrast_level_shift) > 0x3F) {  // same as above
+    //         g = 0x3F;
+    //     } else {
+    //         g = g << contrast_level_shift;
+    //     }
+    //
+    //     if ((b << contrast_level_shift) > 0x1F) {  // same as above
+    //         b = 0x1F;
+    //     } else {
+    //         b = b << contrast_level_shift;
+    //     }
+    //
+    //     pixel.v = (r << 11) | (g << 5) | b;
+    // }
+    //
+    // void gray_scale(ui::Color& pixel) {  // TODO: the blackwhite not looks right....
+    //     uint16_t r = (pixel.v >> 11) & 0x1F;
+    //     uint16_t g = (pixel.v >> 5) & 0x3F;
+    //     uint16_t b = pixel.v & 0x1F;
+    //
+    //     uint16_t average = (r + g + b) / 3;
+    //
+    //     pixel.v = (average << 11) | (average << 5) | average;
+    // }
+
     void lcd_write_data(const uint32_t value) __attribute__((always_inline)) {
         // NOTE: Assumes and DIR=0 and ADDR=1 from command phase.
         data_write_high(value); /* Drive high byte */
@@ -345,7 +414,12 @@ class IO {
         halPolledDelay(18);  // 90ns
 
         const auto value_low = data_read();
-        return (value_high << 8) | value_low;
+        uint32_t original_value = (value_high << 8) | value_low;
+
+        if (get_dark_cover()) {
+            original_value = UNDARKENED_PIXEL(original_value, get_brightness());
+        }
+        return original_value;
     }
 
     void io_write(const bool address, const uint_fast16_t value) {

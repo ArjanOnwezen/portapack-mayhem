@@ -118,6 +118,12 @@ class Message {
         SubGhzFPRxConfigure = 60,
         WeatherData = 61,
         SubGhzDData = 62,
+        GPSPosData = 63,
+        OrientationData = 64,
+        EnvironmentData = 65,
+        AudioBeep = 66,
+        PocsagTosend = 67,
+        BatteryStateData = 68,
         MAX
     };
 
@@ -131,9 +137,9 @@ class Message {
 
 struct RSSIStatistics {
     uint32_t accumulator{0};
-    uint32_t min{0};
-    uint32_t max{0};
-    uint32_t count{0};
+    uint8_t min{0};
+    uint8_t max{0};
+    uint16_t count{0};
 };
 
 class RSSIStatisticsMessage : public Message {
@@ -929,6 +935,7 @@ class AudioTXConfigMessage : public Message {
         const float deviation_hz,
         const float audio_gain,
         const uint8_t audio_shift_bits_s16,
+        const uint8_t bits_per_sample,
         const uint32_t tone_key_delta,
         const float tone_key_mix_weight,
         const bool am_enabled,
@@ -940,6 +947,7 @@ class AudioTXConfigMessage : public Message {
           deviation_hz(deviation_hz),
           audio_gain(audio_gain),
           audio_shift_bits_s16(audio_shift_bits_s16),
+          bits_per_sample(bits_per_sample),
           tone_key_delta(tone_key_delta),
           tone_key_mix_weight(tone_key_mix_weight),
           am_enabled(am_enabled),
@@ -952,6 +960,7 @@ class AudioTXConfigMessage : public Message {
     const float deviation_hz;
     const float audio_gain;
     const uint8_t audio_shift_bits_s16;
+    const uint8_t bits_per_sample;
     const uint32_t tone_key_delta;
     const float tone_key_mix_weight;
     const bool am_enabled;
@@ -1159,8 +1168,10 @@ class RequestSignalMessage : public Message {
    public:
     enum class Signal : char {
         FillRequest = 1,
-        BeepRequest = 2,
-        Squelched = 3
+        RogerBeepRequest = 2,
+        RSSIBeepRequest = 3,
+        BeepStopRequest = 4,
+        Squelched = 5,
     };
 
     constexpr RequestSignalMessage(
@@ -1241,10 +1252,11 @@ class SpectrumPainterBufferConfigureResponseMessage : public Message {
 
 class SubGhzFPRxConfigureMessage : public Message {
    public:
-    constexpr SubGhzFPRxConfigureMessage(uint8_t modulation = 0)
-        : Message{ID::SubGhzFPRxConfigure}, modulation{modulation} {
+    constexpr SubGhzFPRxConfigureMessage(uint8_t modulation = 0, uint32_t sampling_rate = 0)
+        : Message{ID::SubGhzFPRxConfigure}, modulation{modulation}, sampling_rate{sampling_rate} {
     }
     uint8_t modulation = 0;  // 0 am, 1 fm
+    uint32_t sampling_rate = 0;
 };
 
 class WeatherDataMessage : public Message {
@@ -1298,6 +1310,120 @@ class SubGhzDDataMessage : public Message {
     uint32_t serial = 0xFFFFFFFF;
     uint32_t cnt = 0xFF;
     uint64_t data = 0;
+};
+
+class GPSPosDataMessage : public Message {
+   public:
+    constexpr GPSPosDataMessage(
+        float lat = 200.0,
+        float lon = 200.0,
+        int32_t altitude = 0,
+        int32_t speed = 0,
+        uint8_t satinuse = 0)
+        : Message{ID::GPSPosData},
+          lat{lat},
+          lon{lon},
+          altitude{altitude},
+          speed{speed},
+          satinuse{satinuse} {
+    }
+    float lat = 200.0;
+    float lon = 200.0;
+    int32_t altitude = 0;
+    int32_t speed = 0;
+    uint8_t satinuse = 0;
+};
+
+class OrientationDataMessage : public Message {
+   public:
+    constexpr OrientationDataMessage(
+        uint16_t angle = 400,
+        int16_t tilt = 400)
+        : Message{ID::OrientationData},
+          angle{angle},
+          tilt{tilt} {
+    }
+    uint16_t angle = 400;  //>360 -> no orientation set
+    int16_t tilt = 400;
+};
+
+class EnvironmentDataMessage : public Message {
+   public:
+    constexpr EnvironmentDataMessage(
+        float temperature = 0,
+        float humidity = 0,
+        float pressure = 0,
+        uint16_t light = 0)
+        : Message{ID::EnvironmentData},
+          temperature{temperature},
+          humidity{humidity},
+          pressure{pressure},
+          light{light} {
+    }
+    float temperature = 0;  // celsius
+    float humidity = 0;     // percent (rh)
+    float pressure = 0;     // hpa
+    uint16_t light = 0;     // lux
+};
+
+class AudioBeepMessage : public Message {
+   public:
+    constexpr AudioBeepMessage(
+        uint32_t freq = 1000,
+        uint32_t sample_rate = 24000,
+        uint32_t duration_ms = 100)
+        : Message{ID::AudioBeep},
+          freq{freq},
+          sample_rate{sample_rate},
+          duration_ms{duration_ms} {
+    }
+    uint32_t freq = 1000;
+    uint32_t sample_rate = 24000;
+    uint32_t duration_ms = 100;
+};
+
+class PocsagTosendMessage : public Message {
+   public:
+    constexpr PocsagTosendMessage(
+        uint16_t baud = 1200,
+        uint8_t type = 2,
+        char function = 'D',
+        char phase = 'N',
+        uint8_t msglen = 0,
+        uint8_t msg[31] = {0},
+        uint64_t addr = 0)
+        : Message{ID::PocsagTosend},
+          baud{baud},
+          type{type},
+          function{function},
+          phase{phase},
+          msglen{msglen},
+          addr{addr} {
+        memcpy(this->msg, msg, 31);
+    }
+    uint16_t baud = 1200;
+    uint8_t type = 2;
+    char function = 'D';
+    char phase = 'N';
+    uint8_t msglen = 0;
+    uint8_t msg[31] = {0};
+    uint64_t addr = 0;
+};
+
+class BatteryStateMessage : public Message {
+   public:
+    constexpr BatteryStateMessage(
+        uint8_t percent,
+        bool on_charger,
+        uint16_t voltage)
+        : Message{ID::BatteryStateData},
+          percent{percent},
+          on_charger{on_charger},
+          voltage{voltage} {
+    }
+    uint8_t percent = 0;
+    bool on_charger = false;
+    uint16_t voltage = 0;  // mV
 };
 
 #endif /*__MESSAGE_H__*/

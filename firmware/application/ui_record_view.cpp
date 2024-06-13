@@ -51,9 +51,9 @@ namespace ui {
         shared_memory.application_queue.push(message);
 
         if( !pitch_rssi_enabled ) {
-                button_pitch_rssi.set_foreground(Color::orange());
+                button_pitch_rssi.set_foreground(Theme::getInstance()->fg_orange->foreground);
         } else {
-                button_pitch_rssi.set_foreground(Color::green());
+                button_pitch_rssi.set_foreground(Theme::getInstance()->fg_green->foreground);
         }
 }*/
 
@@ -75,6 +75,7 @@ RecordView::RecordView(
         &rect_background,
         //&button_pitch_rssi,
         &button_record,
+        &gps_icon,
         &text_record_filename,
         &text_record_dropped,
         &text_time_available,
@@ -93,6 +94,7 @@ RecordView::RecordView(
     signal_token_tick_second = rtc_time::signal_tick_second += [this]() {
         this->on_tick_second();
     };
+    gps_icon.hidden(true);
 }
 
 RecordView::~RecordView() {
@@ -111,9 +113,9 @@ uint32_t RecordView::set_sampling_rate(uint32_t new_sampling_rate) {
     // Change the "REC" icon background to yellow when the selected rate exceeds hardware limits.
     // Above this threshold, samples will be dropped resulting incomplete capture files.
     if (new_sampling_rate > 1'250'000) {
-        button_record.set_background(ui::Color::yellow());
+        button_record.set_background(Theme::getInstance()->fg_yellow->foreground);
     } else {
-        button_record.set_background(ui::Color::black());
+        button_record.set_background(Theme::getInstance()->fg_yellow->background);
     }
 
     if (sampling_rate != new_sampling_rate) {
@@ -145,6 +147,15 @@ OversampleRate RecordView::get_oversample_rate(uint32_t sample_rate) {
 // Setter for datetime and frequency filename
 void RecordView::set_filename_date_frequency(bool set) {
     filename_date_frequency = set;
+    if (set)
+        filename_as_is = false;
+}
+
+// Setter for leaving the filename untouched
+void RecordView::set_filename_as_is(bool set) {
+    filename_as_is = set;
+    if (set)
+        filename_date_frequency = false;
 }
 
 bool RecordView::is_active() const {
@@ -171,8 +182,15 @@ void RecordView::start() {
     }
 
     std::filesystem::path base_path;
+
+    auto tmp_path = filename_stem_pattern;  // store it, to be able to modify without causing permanent change
+    // check for geo data, if present append filename with _GEO
+    if (latitude != 0 && longitude != 0 && latitude < 200 && longitude < 200) {
+        tmp_path.append_filename(u"_GEO");
+    }
+
     if (filename_date_frequency) {
-        rtcGetTime(&RTCD1, &datetime);
+        rtc_time::now(datetime);
 
         // ISO 8601
         std::string date_time =
@@ -183,12 +201,14 @@ void RecordView::start() {
             to_string_dec_uint(datetime.minute()) +
             to_string_dec_uint(datetime.second());
 
-        base_path = filename_stem_pattern.string() + "_" + date_time + "_" +
+        base_path = tmp_path.string() + "_" + date_time + "_" +
                     trim(to_string_freq(receiver_model.target_frequency())) + "Hz";
         base_path = folder / base_path;
-    } else {
-        base_path = next_filename_matching_pattern(folder / filename_stem_pattern);
-    }
+    } else if (filename_as_is) {
+        base_path = tmp_path.string();
+        base_path = folder / base_path;
+    } else
+        base_path = next_filename_matching_pattern(folder / tmp_path);
 
     if (base_path.empty()) {
         return;
@@ -212,7 +232,7 @@ void RecordView::start() {
         case FileType::RawS8:
         case FileType::RawS16: {
             const auto metadata_file_error = write_metadata_file(
-                get_metadata_path(base_path), {receiver_model.target_frequency(), sampling_rate});
+                get_metadata_path(base_path), {receiver_model.target_frequency(), sampling_rate, latitude, longitude, satinuse});
             if (metadata_file_error.is_valid()) {
                 handle_error(metadata_file_error.value());
                 return;
@@ -329,6 +349,14 @@ void RecordView::trim_capture() {
     }
 
     trim_path = {};
+}
+
+void RecordView::on_gps(const GPSPosDataMessage* msg) {
+    if (msg->lat == 0 || msg->lat > 399) return;  // not valid one
+    if (latitude == 0) gps_icon.hidden(false);    // prev was 0, so not shown already
+    latitude = msg->lat;
+    longitude = msg->lon;
+    satinuse = msg->satinuse;
 }
 
 void RecordView::handle_capture_thread_done(const File::Error error) {

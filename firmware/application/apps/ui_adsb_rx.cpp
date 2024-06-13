@@ -2,6 +2,7 @@
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2017 Furrtek
  * Copyright (C) 2023 Kyle Reed
+ * Copyright (C) 2024 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -30,8 +31,12 @@
 #include "portapack_persistent_memory.hpp"
 #include "rtc_time.hpp"
 #include "string_format.hpp"
+#include "file_path.hpp"
+#include "audio.hpp"
 
 using namespace portapack;
+
+namespace pmem = portapack::persistent_memory;
 
 namespace ui {
 
@@ -52,15 +57,15 @@ void RecentEntriesTable<AircraftRecentEntries>::draw(
         case ADSBAgeState::Invalid:
         case ADSBAgeState::Current:
             entry_string = "";
-            target_color = Color::green();
+            target_color = Theme::getInstance()->fg_green->foreground;
             break;
         case ADSBAgeState::Recent:
             entry_string = STR_COLOR_LIGHT_GREY;
-            target_color = Color::light_grey();
+            target_color = Theme::getInstance()->fg_light->foreground;
             break;
         default:
             entry_string = STR_COLOR_DARK_GREY;
-            target_color = Color::grey();
+            target_color = Theme::getInstance()->fg_medium->foreground;
     };
 
     entry_string +=
@@ -102,7 +107,8 @@ void ADSBLogger::log(const ADSBLogEntry& log_entry) {
         log_line += " Type:" + to_string_dec_uint(log_entry.vel_type) +
                     " Hdg:" + to_string_dec_uint(log_entry.vel.heading) +
                     " Spd: " + to_string_dec_int(log_entry.vel.speed);
-
+    if (log_entry.sil != 0)
+        log_line += " Sil:" + to_string_dec_uint(log_entry.sil);
     log_file.write_entry(log_line);
 }
 
@@ -127,8 +133,8 @@ ADSBRxAircraftDetailsView::ADSBRxAircraftDetailsView(
     text_icao_address.set(entry.icao_str);
 
     // Try getting the aircraft information from icao24.db
-    std::database db{};
-    std::database::AircraftDBRecord aircraft_record;
+    database db{};
+    database::AircraftDBRecord aircraft_record;
     auto return_code = db.retrieve_aircraft_record(&aircraft_record, entry.icao_str);
     switch (return_code) {
         case DATABASE_RECORD_FOUND:
@@ -199,6 +205,10 @@ ADSBRxAircraftDetailsView::ADSBRxAircraftDetailsView(
             }
             break;
 
+        case DATABASE_RECORD_NOT_FOUND:
+            // Defaults should be filled by the constructor
+            break;
+
         case DATABASE_NOT_FOUND:
             text_manufacturer.set("No icao24.db file");
             break;
@@ -233,24 +243,6 @@ ADSBRxDetailsView::ADSBRxDetailsView(
          &button_aircraft_details,
          &button_see_map});
 
-    // The following won't change for a given airborne aircraft.
-    // Try getting the airline's name from airlines.db.
-    // NB: Only works once callsign has been read and won't be updated.
-    std::database db;
-    std::database::AirlinesDBRecord airline_record;
-    std::string airline_code = entry_.callsign.substr(0, 3);
-    auto return_code = db.retrieve_airline_record(&airline_record, airline_code);
-
-    switch (return_code) {
-        case DATABASE_RECORD_FOUND:
-            text_airline.set(airline_record.airline);
-            text_country.set(airline_record.country);
-            break;
-        case DATABASE_NOT_FOUND:
-            text_airline.set("No airlines.db file");
-            break;
-    }
-
     text_icao_address.set(entry_.icao_str);
 
     button_aircraft_details.on_select = [this, &nav](Button&) {
@@ -266,6 +258,7 @@ ADSBRxDetailsView::ADSBRxDetailsView(
             get_map_tag(entry_),
             entry_.pos.altitude,
             GeoPos::alt_unit::FEET,
+            GeoPos::spd_unit::MPH,
             entry_.pos.latitude,
             entry_.pos.longitude,
             entry_.velo.heading);
@@ -290,7 +283,7 @@ void ADSBRxDetailsView::update(const AircraftRecentEntry& entry) {
     } else if (geomap_view_) {
         // Map is showing, update the current item.
         geomap_view_->update_tag(get_map_tag(entry_));
-        geomap_view_->update_position(entry.pos.latitude, entry.pos.longitude, entry.velo.heading, entry.pos.altitude);
+        geomap_view_->update_position(entry.pos.latitude, entry.pos.longitude, entry.velo.heading, entry.pos.altitude, entry.velo.speed);
     } else {
         // Details is showing, update details.
         refresh_ui();
@@ -317,7 +310,43 @@ bool ADSBRxDetailsView::add_map_marker(const AircraftRecentEntry& entry) {
     return markerStored == MARKER_STORED;
 }
 
+void ADSBRxDetailsView::on_gps(const GPSPosDataMessage* msg) {
+    if (!geomap_view_)
+        return;
+    geomap_view_->update_my_position(msg->lat, msg->lon, msg->altitude);
+}
+void ADSBRxDetailsView::on_orientation(const OrientationDataMessage* msg) {
+    if (!geomap_view_)
+        return;
+    geomap_view_->update_my_orientation(msg->angle);
+}
+
 void ADSBRxDetailsView::refresh_ui() {
+    // The following won't change for a given airborne aircraft.
+    // Try getting the airline's name from airlines.db.
+    if (!airline_checked && !entry_.callsign.empty()) {
+        airline_checked = true;
+
+        database db;
+        database::AirlinesDBRecord airline_record;
+        std::string airline_code = entry_.callsign.substr(0, 3);
+        auto return_code = db.retrieve_airline_record(&airline_record, airline_code);
+
+        switch (return_code) {
+            case DATABASE_RECORD_FOUND:
+                text_airline.set(airline_record.airline);
+                text_country.set(airline_record.country);
+                break;
+            case DATABASE_RECORD_NOT_FOUND:
+                // text_airline.set("-"); // It's what it is constructed with
+                // text_country.set("-"); // It's what it is constructed with
+                break;
+            case DATABASE_NOT_FOUND:
+                text_airline.set("No airlines.db file");
+                break;
+        }
+    }
+
     auto age = entry_.age;
     if (age < 60)
         text_last_seen.set(to_string_dec_uint(age) + " seconds ago");
@@ -326,11 +355,12 @@ void ADSBRxDetailsView::refresh_ui() {
 
     text_callsign.set(entry_.callsign);
     text_infos.set(entry_.info_string);
+    std::string str_sil = (entry_.sil > 0) ? " Sil:" + to_string_dec_uint(entry_.sil) : "";
     if (entry_.velo.heading < 360 && entry_.velo.speed >= 0)
         text_info2.set("Hdg:" + to_string_dec_uint(entry_.velo.heading) +
-                       " Spd:" + to_string_dec_int(entry_.velo.speed));
+                       " Spd:" + to_string_dec_int(entry_.velo.speed) + str_sil);
     else
-        text_info2.set("");
+        text_info2.set(str_sil);
 
     text_frame_pos_even.set(to_string_hex_array(entry_.frame_pos_even.get_raw_data(), 14));
     text_frame_pos_odd.set(to_string_hex_array(entry_.frame_pos_odd.get_raw_data(), 14));
@@ -348,7 +378,8 @@ ADSBRxView::ADSBRxView(NavigationView& nav) {
          &rssi,
          &recent_entries_view,
          &status_frame,
-         &status_good_frame});
+         &status_good_frame,
+         &field_volume});
 
     recent_entries_view.set_parent_rect({0, 16, 240, 272});
     recent_entries_view.on_select = [this, &nav](const AircraftRecentEntry& entry) {
@@ -366,14 +397,20 @@ ADSBRxView::ADSBRxView(NavigationView& nav) {
     };
 
     logger = std::make_unique<ADSBLogger>();
-    logger->append(LOG_ROOT_DIR "/ADSB.TXT");
+    logger->append(logs_dir / u"ADSB.TXT");
 
     receiver_model.enable();
     baseband::set_adsb();
+
+    if (pmem::beep_on_packets()) {
+        audio::set_rate(audio::Rate::Hz_24000);
+        audio::output::start();
+    }
 }
 
 ADSBRxView::~ADSBRxView() {
     rtc_time::signal_tick_second -= signal_token_tick_second;
+    audio::output::stop();
     receiver_model.disable();
     baseband::shutdown();
 }
@@ -395,7 +432,7 @@ void ADSBRxView::on_frame(const ADSBFrameMessage* message) {
     status_good_frame.toggle();
 
     rtc::RTC datetime;
-    rtcGetTime(&RTCD1, &datetime);
+    rtcGetTime(&RTCD1, &datetime);  // Reading RTC directly to avoid DST transitions when calculating delta
     frame.set_rx_timestamp(datetime.minute() * 60 + datetime.second());
 
     // NB: Reference to update entry in-place.
@@ -436,7 +473,6 @@ void ADSBRxView::on_frame(const ADSBFrameMessage* message) {
                     "Alt:" + to_string_dec_int(entry.pos.altitude) +
                     " Lat:" + to_string_decimal(entry.pos.latitude, 2) +
                     " Lon:" + to_string_decimal(entry.pos.longitude, 2);
-
                 entry.set_info_string(std::move(str_info));
             }
 
@@ -444,10 +480,16 @@ void ADSBRxView::on_frame(const ADSBFrameMessage* message) {
             entry.set_frame_velo(frame);
             log_entry.vel = entry.velo;
             log_entry.vel_type = msg_sub;
+        } else if (msg_type == AIRBORNE_OP_STATUS) {  // for ver 1
+            entry.sil = frame.get_sil_value();
         }
     }
 
     logger->log(log_entry);
+
+    if (pmem::beep_on_packets()) {
+        baseband::request_audio_beep(1000, 24000, 60);
+    }
 }
 
 void ADSBRxView::on_tick_second() {

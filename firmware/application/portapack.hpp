@@ -33,13 +33,26 @@
 #include "backlight.hpp"
 #include "usb_serial.hpp"
 
+#include "ads1110.hpp"
+
 #include "radio.hpp"
 #include "clock_manager.hpp"
 #include "temperature_logger.hpp"
+#include "battery.hpp"
+#include "theme.hpp"
 
 /* TODO: This would be better as a class to add
  * guardrails on setting properties. */
 namespace portapack {
+
+enum class init_status_t {
+    INIT_SUCCESS,
+    INIT_NO_PORTAPACK,
+    INIT_PORTAPACK_CPLD_FAILED,
+    INIT_HACKRF_CPLD_FAILED,
+};
+
+extern const char* init_error;
 
 extern portapack::IO io;
 
@@ -65,9 +78,13 @@ extern TemperatureLogger temperature_logger;
 void set_antenna_bias(const bool v);
 bool get_antenna_bias();
 
-bool init();
+init_status_t init();
 void shutdown(const bool leave_screen_on = false);
 
+void setEventDispatcherToUSBSerial(EventDispatcher* evt);
+
 Backlight* backlight();
+
+extern bool async_tx_enabled;  // this is for serial tx things, globally
 
 } /* namespace portapack */

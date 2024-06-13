@@ -31,9 +31,11 @@
 #include "chprintf.h"
 #include "irq_controls.hpp"
 #include "string_format.hpp"
-#include "usb_serial_io.h"
+#include "usb_serial_device_to_host.h"
+#include "rtc_time.hpp"
 
 using namespace portapack;
+using namespace rtc_time;
 
 namespace ui {
 
@@ -172,6 +174,10 @@ bool Widget::on_touch(const TouchEvent event) {
     (void)event;
     return false;
 }
+bool Widget::on_keyboard(const KeyboardEvent event) {
+    (void)event;
+    return false;
+}
 
 const std::vector<Widget*>& Widget::children() const {
     return no_children;
@@ -233,6 +239,12 @@ void Widget::dirty_overlapping_children_in_rect(const Rect& child_rect) {
     }
 }
 
+void Widget::getAccessibilityText(std::string& result) {
+    result = "";
+}
+void Widget::getWidgetName(std::string& result) {
+    result = "";
+}
 /* View ******************************************************************/
 
 void View::paint(Painter& painter) {
@@ -363,6 +375,12 @@ void Text::set(std::string_view value) {
     set_dirty();
 }
 
+void Text::getAccessibilityText(std::string& result) {
+    result = text;
+}
+void Text::getWidgetName(std::string& result) {
+    result = "Text";
+}
 void Text::paint(Painter& painter) {
     const auto rect = screen_rect();
     auto s = has_focus() ? style().invert() : style();
@@ -403,10 +421,21 @@ void Labels::paint(Painter& painter) {
     }
 }
 
+void Labels::getAccessibilityText(std::string& result) {
+    result = "";
+    for (auto& label : labels_) {
+        result += label.text;
+        result += ", ";
+    }
+}
+void Labels::getWidgetName(std::string& result) {
+    result = "Labels";
+}
+
 /* LiveDateTime **********************************************************/
 
 void LiveDateTime::on_tick_second() {
-    rtcGetTime(&RTCD1, &datetime);
+    rtc_time::now(datetime);
     text = "";
     if (!hide_clock) {
         if (date_enabled) {
@@ -497,7 +526,7 @@ void BigFrequency::paint(Painter& painter) {
     // Erase
     painter.fill_rectangle(
         {{0, rect.location().y()}, {screen_width, 52}},
-        ui::Color::black());
+        Theme::getInstance()->bg_darkest->background);
 
     // Prepare digits
     if (!_frequency) {
@@ -575,6 +604,13 @@ void ProgressBar::set_value(const uint32_t value) {
     set_dirty();
 }
 
+void ProgressBar::getAccessibilityText(std::string& result) {
+    result = to_string_dec_uint(_value) + " / " + to_string_dec_uint(_max);
+}
+void ProgressBar::getWidgetName(std::string& result) {
+    result = "ProgressBar";
+}
+
 void ProgressBar::paint(Painter& painter) {
     int v_scaled;
 
@@ -598,7 +634,7 @@ ActivityDot::ActivityDot(
       _color{color} {}
 
 void ActivityDot::paint(Painter& painter) {
-    painter.fill_rectangle(screen_rect(), _on ? _color : Color::grey());
+    painter.fill_rectangle(screen_rect(), _on ? _color : Theme::getInstance()->bg_medium->background);
 }
 
 void ActivityDot::toggle() {
@@ -625,7 +661,7 @@ void Console::clear(bool clear_buffer = false) {
     if (!hidden() && visible()) {
         display.fill_rectangle(
             screen_rect(),
-            Color::black());
+            Theme::getInstance()->bg_darkest->background);
     }
 
     pos = {0, 0};
@@ -673,6 +709,13 @@ void Console::write(std::string message) {
     } else {
         if (buffer.size() < 256) buffer += message;
     }
+}
+
+void Console::getAccessibilityText(std::string& result) {
+    result = "{" + buffer + "}";
+}
+void Console::getWidgetName(std::string& result) {
+    result = "Console";
 }
 
 void Console::writeln(std::string message) {
@@ -783,6 +826,13 @@ bool Checkbox::set_value(const bool value) {
     return false;
 }
 
+void Checkbox::getAccessibilityText(std::string& result) {
+    result = text_ + ((value_) ? " checked" : " unchecked");
+}
+void Checkbox::getWidgetName(std::string& result) {
+    result = "Checkbox";
+}
+
 bool Checkbox::value() const {
     return value_;
 }
@@ -807,12 +857,12 @@ void Checkbox::paint(Painter& painter) {
 
         if (value_ == true) {
             // Check
-            portapack::display.draw_line({x + 2, y + 14}, {x + 6, y + 18}, ui::Color::green());
-            portapack::display.draw_line({x + 6, y + 18}, {x + 20, y + 4}, ui::Color::green());
+            portapack::display.draw_line({x + 2, y + 14}, {x + 6, y + 18}, Theme::getInstance()->fg_green->foreground);
+            portapack::display.draw_line({x + 6, y + 18}, {x + 20, y + 4}, Theme::getInstance()->fg_green->foreground);
         } else {
             // Cross
-            portapack::display.draw_line({x + 1, y + 1}, {x + 24 - 2, y + 24 - 2}, ui::Color::red());
-            portapack::display.draw_line({x + 24 - 2, y + 1}, {x + 1, y + 24 - 2}, ui::Color::red());
+            portapack::display.draw_line({x + 1, y + 1}, {x + 24 - 2, y + 24 - 2}, Theme::getInstance()->fg_red->foreground);
+            portapack::display.draw_line({x + 24 - 2, y + 1}, {x + 1, y + 24 - 2}, Theme::getInstance()->fg_red->foreground);
         }
 
         painter.draw_string(
@@ -830,12 +880,12 @@ void Checkbox::paint(Painter& painter) {
 
         if (value_ == true) {
             // Check
-            portapack::display.draw_line({x + 2, y + 8}, {x + 6, y + 12}, ui::Color::green());
-            portapack::display.draw_line({x + 6, y + 12}, {x + 13, y + 5}, ui::Color::green());
+            portapack::display.draw_line({x + 2, y + 8}, {x + 6, y + 12}, Theme::getInstance()->fg_green->foreground);
+            portapack::display.draw_line({x + 6, y + 12}, {x + 13, y + 5}, Theme::getInstance()->fg_green->foreground);
         } else {
             // Cross
-            portapack::display.draw_line({x + 1, y + 1}, {x + 16 - 2, y + 16 - 2}, ui::Color::red());
-            portapack::display.draw_line({x + 16 - 2, y + 1}, {x + 1, y + 16 - 2}, ui::Color::red());
+            portapack::display.draw_line({x + 1, y + 1}, {x + 16 - 2, y + 16 - 2}, Theme::getInstance()->fg_red->foreground);
+            portapack::display.draw_line({x + 16 - 2, y + 1}, {x + 1, y + 16 - 2}, Theme::getInstance()->fg_red->foreground);
         }
 
         painter.draw_string(
@@ -850,6 +900,11 @@ bool Checkbox::on_key(const KeyEvent key) {
     if (key == KeyEvent::Select)
         return set_value(not value_);
 
+    return false;
+}
+
+bool Checkbox::on_keyboard(const KeyboardEvent event) {
+    if (event == 10 || event == 32) return set_value(not value_);
     return false;
 }
 
@@ -895,23 +950,30 @@ std::string Button::text() const {
     return text_;
 }
 
+void Button::getAccessibilityText(std::string& result) {
+    result = text_;
+}
+void Button::getWidgetName(std::string& result) {
+    result = "Button";
+}
+
 void Button::paint(Painter& painter) {
     Color bg, fg;
     const auto r = screen_rect();
 
     if (has_focus() || highlighted()) {
         bg = style().foreground;
-        fg = Color::black();
+        fg = Theme::getInstance()->bg_darkest->background;
     } else {
-        bg = Color::grey();
+        bg = Theme::getInstance()->bg_medium->background;
         fg = style().foreground;
     }
 
     const Style paint_style = {style().font, bg, fg};
 
-    painter.draw_rectangle({r.location(), {r.size().width(), 1}}, Color::light_grey());
-    painter.draw_rectangle({r.location().x(), r.location().y() + r.size().height() - 1, r.size().width(), 1}, Color::dark_grey());
-    painter.draw_rectangle({r.location().x() + r.size().width() - 1, r.location().y(), 1, r.size().height()}, Color::dark_grey());
+    painter.draw_rectangle({r.location(), {r.size().width(), 1}}, Theme::getInstance()->fg_light->foreground);
+    painter.draw_rectangle({r.location().x(), r.location().y() + r.size().height() - 1, r.size().width(), 1}, Theme::getInstance()->bg_dark->background);
+    painter.draw_rectangle({r.location().x() + r.size().width() - 1, r.location().y(), 1, r.size().height()}, Theme::getInstance()->bg_dark->background);
 
     painter.fill_rectangle(
         {r.location().x(), r.location().y() + 1, r.size().width() - 1, r.size().height() - 2},
@@ -941,6 +1003,16 @@ bool Button::on_key(const KeyEvent key) {
         }
     }
 
+    return false;
+}
+
+bool Button::on_keyboard(const KeyboardEvent event) {
+    if (event == 10 || event == 32) {
+        if (on_select) {
+            on_select(*this);
+            return true;
+        }
+    }
     return false;
 }
 
@@ -1031,23 +1103,30 @@ std::string ButtonWithEncoder::text() const {
     return text_;
 }
 
+void ButtonWithEncoder::getAccessibilityText(std::string& result) {
+    result = text_;
+}
+void ButtonWithEncoder::getWidgetName(std::string& result) {
+    result = "ButtonWithEncoder";
+}
+
 void ButtonWithEncoder::paint(Painter& painter) {
     Color bg, fg;
     const auto r = screen_rect();
 
     if (has_focus() || highlighted()) {
         bg = style().foreground;
-        fg = Color::black();
+        fg = Theme::getInstance()->bg_darkest->background;
     } else {
-        bg = Color::grey();
+        bg = Theme::getInstance()->bg_medium->background;
         fg = style().foreground;
     }
 
     const Style paint_style = {style().font, bg, fg};
 
-    painter.draw_rectangle({r.location(), {r.size().width(), 1}}, Color::light_grey());
-    painter.draw_rectangle({r.location().x(), r.location().y() + r.size().height() - 1, r.size().width(), 1}, Color::dark_grey());
-    painter.draw_rectangle({r.location().x() + r.size().width() - 1, r.location().y(), 1, r.size().height()}, Color::dark_grey());
+    painter.draw_rectangle({r.location(), {r.size().width(), 1}}, Theme::getInstance()->fg_light->foreground);
+    painter.draw_rectangle({r.location().x(), r.location().y() + r.size().height() - 1, r.size().width(), 1}, Theme::getInstance()->bg_dark->background);
+    painter.draw_rectangle({r.location().x() + r.size().width() - 1, r.location().y(), 1, r.size().height()}, Theme::getInstance()->bg_dark->background);
 
     painter.fill_rectangle(
         {r.location().x(), r.location().y() + 1, r.size().width() - 1, r.size().height() - 2},
@@ -1077,6 +1156,16 @@ bool ButtonWithEncoder::on_key(const KeyEvent key) {
         }
     }
 
+    return false;
+}
+
+bool ButtonWithEncoder::on_keyboard(const KeyboardEvent key) {
+    if (key == 32 || key == 10) {
+        if (on_select) {
+            on_select(*this);
+            return true;
+        }
+    }
     return false;
 }
 
@@ -1155,7 +1244,7 @@ NewButton::NewButton(
     Rect parent_rect,
     std::string text,
     const Bitmap* bitmap)
-    : NewButton{parent_rect, text, bitmap, Color::dark_cyan()} {}
+    : NewButton{parent_rect, text, bitmap, Theme::getInstance()->fg_darkcyan->foreground} {}
 
 NewButton::NewButton(
     Rect parent_rect,
@@ -1176,6 +1265,13 @@ void NewButton::set_text(const std::string value) {
     set_dirty();
 }
 
+void NewButton::getAccessibilityText(std::string& result) {
+    result = text_;
+}
+void NewButton::getWidgetName(std::string& result) {
+    result = "NewButton";
+}
+
 std::string NewButton::text() const {
     return text_;
 }
@@ -1191,6 +1287,11 @@ const Bitmap* NewButton::bitmap() {
 
 void NewButton::set_color(Color color) {
     color_ = color;
+    set_dirty();
+}
+
+void NewButton::set_bg_color(Color color) {
+    bg_color_ = color;
     set_dirty();
 }
 
@@ -1210,9 +1311,9 @@ void NewButton::paint(Painter& painter) {
     const auto r = screen_rect();
     const Style style = paint_style();
 
-    painter.draw_rectangle({r.location(), {r.width(), 1}}, Color::light_grey());
-    painter.draw_rectangle({r.left(), r.top() + r.height() - 1, r.width(), 1}, Color::dark_grey());
-    painter.draw_rectangle({r.left() + r.width() - 1, r.top(), 1, r.height()}, Color::dark_grey());
+    painter.draw_rectangle({r.location(), {r.width(), 1}}, Theme::getInstance()->fg_light->foreground);
+    painter.draw_rectangle({r.left(), r.top() + r.height() - 1, r.width(), 1}, Theme::getInstance()->bg_dark->background);
+    painter.draw_rectangle({r.left() + r.width() - 1, r.top(), 1, r.height()}, Theme::getInstance()->bg_dark->background);
 
     painter.fill_rectangle(
         {r.left(), r.top() + 1, r.width() - 1, r.height() - 2},
@@ -1245,9 +1346,9 @@ Style NewButton::paint_style() {
 
     if (has_focus() || highlighted()) {
         s.background = style().foreground;
-        s.foreground = Color::black();
+        s.foreground = Theme::getInstance()->bg_darkest->background;
     } else {
-        s.background = Color::grey();
+        s.background = bg_color_;
         s.foreground = style().foreground;
     }
 
@@ -1274,6 +1375,16 @@ bool NewButton::on_key(const KeyEvent key) {
     return false;
 }
 
+bool NewButton::on_keyboard(const KeyboardEvent key) {
+    if (key == 32 || key == 10) {
+        if (on_select) {
+            on_select();
+            return true;
+        }
+    }
+    return false;
+}
+
 bool NewButton::on_touch(const TouchEvent event) {
     switch (event.type) {
         case TouchEvent::Type::Start:
@@ -1297,7 +1408,7 @@ bool NewButton::on_touch(const TouchEvent event) {
 /* Image *****************************************************************/
 
 Image::Image()
-    : Image{{}, nullptr, Color::white(), Color::black()} {
+    : Image{{}, nullptr, Theme::getInstance()->bg_darkest->foreground, Theme::getInstance()->bg_darkest->background} {
 }
 
 Image::Image(
@@ -1360,6 +1471,13 @@ ImageButton::ImageButton(
     set_focusable(true);
 }
 
+void ImageButton::getAccessibilityText(std::string& result) {
+    result = "image";
+}
+void ImageButton::getWidgetName(std::string& result) {
+    result = "ImageButton";
+}
+
 bool ImageButton::on_key(const KeyEvent key) {
     if (key == KeyEvent::Select) {
         if (on_select) {
@@ -1368,6 +1486,16 @@ bool ImageButton::on_key(const KeyEvent key) {
         }
     }
 
+    return false;
+}
+
+bool ImageButton::on_keyboard(const KeyboardEvent key) {
+    if (key == 32 || key == 10) {
+        if (on_select) {
+            on_select(*this);
+            return true;
+        }
+    }
     return false;
 }
 
@@ -1397,9 +1525,9 @@ ImageToggle::ImageToggle(
     const Bitmap* bitmap_)
     : ImageToggle{parent_rect,
                   bitmap_,
-                  Color::green(),
-                  Color::light_grey(),
-                  Color::dark_grey()} {}
+                  Theme::getInstance()->fg_green->foreground,
+                  Theme::getInstance()->fg_light->foreground,
+                  Theme::getInstance()->bg_dark->background} {}
 
 ImageToggle::ImageToggle(
     Rect parent_rect,
@@ -1440,6 +1568,13 @@ bool ImageToggle::value() const {
     return value_;
 }
 
+void ImageToggle::getAccessibilityText(std::string& result) {
+    result = value_ ? "checked" : "unchecked";
+}
+void ImageToggle::getWidgetName(std::string& result) {
+    result = "ImageToggle";
+}
+
 void ImageToggle::set_value(bool b) {
     if (b == value_)
         return;
@@ -1473,6 +1608,13 @@ size_t ImageOptionsField::selected_index() const {
 
 size_t ImageOptionsField::selected_index_value() const {
     return options[selected_index_].second;
+}
+
+void ImageOptionsField::getAccessibilityText(std::string& result) {
+    result = "selected index: " + to_string_dec_uint(selected_index_);
+}
+void ImageOptionsField::getWidgetName(std::string& result) {
+    result = "ImageOptionsField";
 }
 
 void ImageOptionsField::set_selected_index(const size_t new_index) {
@@ -1537,6 +1679,12 @@ bool ImageOptionsField::on_encoder(const EncoderEvent delta) {
     return true;
 }
 
+bool ImageOptionsField::on_keyboard(const KeyboardEvent key) {
+    if (key == '+' || key == ' ' || key == 10) return on_encoder(1);
+    if (key == '-' || key == 8) return on_encoder(-1);
+    return false;
+}
+
 bool ImageOptionsField::on_touch(const TouchEvent event) {
     if (event.type == TouchEvent::Type::Start) {
         focus();
@@ -1566,6 +1714,20 @@ const OptionsField::name_t& OptionsField::selected_index_name() const {
 
 const OptionsField::value_t& OptionsField::selected_index_value() const {
     return options_[selected_index_].second;
+}
+
+void OptionsField::getAccessibilityText(std::string& result) {
+    result = "options: ";
+    bool first = true;
+    for (const auto& option : options_) {
+        if (!first) result += " ,";
+        first = false;
+        result += option.first;
+    }
+    result += "; selected: " + selected_index_name();
+}
+void OptionsField::getWidgetName(std::string& result) {
+    result = "OptionsField";
 }
 
 void OptionsField::set_selected_index(const size_t new_index, bool trigger_change) {
@@ -1624,7 +1786,7 @@ void OptionsField::set_options(options_t new_options) {
 void OptionsField::paint(Painter& painter) {
     const auto paint_style = has_focus() ? style().invert() : style();
 
-    painter.fill_rectangle({screen_rect().location(), {(int)length_ * 8, 16}}, ui::Color::black());
+    painter.fill_rectangle({screen_rect().location(), {(int)length_ * 8, 16}}, Theme::getInstance()->bg_darkest->background);
 
     if (selected_index() < options_.size()) {
         std::string_view temp = selected_index_name();
@@ -1653,6 +1815,11 @@ bool OptionsField::on_encoder(const EncoderEvent delta) {
     set_selected_index(new_value);
     return true;
 }
+bool OptionsField::on_keyboard(const KeyboardEvent key) {
+    if (key == '+' || key == ' ' || key == 10) return on_encoder(1);
+    if (key == '-' || key == 8) return on_encoder(-1);
+    return false;
+}
 
 bool OptionsField::on_touch(const TouchEvent event) {
     if (event.type == TouchEvent::Type::Start) {
@@ -1679,6 +1846,13 @@ TextEdit::TextEdit(
 
 const std::string& TextEdit::value() const {
     return text_;
+}
+
+void TextEdit::getAccessibilityText(std::string& result) {
+    result = text_;
+}
+void TextEdit::getWidgetName(std::string& result) {
+    result = "TextEdit";
 }
 
 void TextEdit::set_cursor(uint32_t pos) {
@@ -1772,6 +1946,19 @@ bool TextEdit::on_key(const KeyEvent key) {
     return true;
 }
 
+bool TextEdit::on_keyboard(const KeyboardEvent key) {
+    // if ascii printable
+    if (key >= 0x20 && key <= 0x7e) {
+        char_add(key);
+        return true;
+    }
+    if (key == 8) {
+        char_delete();
+        return true;
+    }
+    return false;
+}
+
 bool TextEdit::on_encoder(const EncoderEvent delta) {
     int32_t new_pos = cursor_pos_ + delta;
 
@@ -1817,6 +2004,13 @@ const std::string& TextField::get_text() const {
     return text;
 }
 
+void TextField::getAccessibilityText(std::string& result) {
+    result = text;
+}
+void TextField::getWidgetName(std::string& result) {
+    result = "TextField";
+}
+
 void TextField::set_text(std::string_view value) {
     set(value);
     if (on_change)
@@ -1850,6 +2044,135 @@ bool TextField::on_touch(TouchEvent event) {
     return false;
 }
 
+/* BatteryIcon *************************************************************/
+
+BatteryIcon::BatteryIcon(Rect parent_rect, uint8_t percent)
+    : Widget(parent_rect) {
+    this->set_battery(percent, false);
+    set_focusable(true);
+}
+
+void BatteryIcon::getAccessibilityText(std::string& result) {
+    result = to_string_dec_uint(percent_) + "%";
+}
+void BatteryIcon::getWidgetName(std::string& result) {
+    result = "Battery percent";
+}
+
+void BatteryIcon::set_battery(uint8_t percentage, bool charge) {
+    if (charge == charge_ && percent_ == percentage) return;
+    percent_ = percentage;
+    charge_ = charge;
+    set_dirty();
+}
+
+bool BatteryIcon::on_key(KeyEvent key) {
+    if (key == KeyEvent::Select && on_select) {
+        on_select();
+        return true;
+    }
+    return false;
+}
+
+bool BatteryIcon::on_touch(TouchEvent event) {
+    if (event.type == TouchEvent::Type::Start) {
+        focus();
+        return true;
+    }
+    if (event.type == TouchEvent::Type::End && on_select) {
+        on_select();
+        return true;
+    }
+    return false;
+}
+void BatteryIcon::paint(Painter& painter) {
+    ui::Rect rect = screen_rect();                                                                                                                        // 10, 1 * 16
+    painter.fill_rectangle(rect, has_focus() || highlighted() ? Theme::getInstance()->fg_light->foreground : Theme::getInstance()->bg_dark->background);  // clear
+    ui::Color battColor = (charge_) ? Theme::getInstance()->fg_blue->foreground : Theme::getInstance()->fg_green->foreground;
+    // batt body:
+    painter.draw_vline({rect.left() + 1, rect.top() + 2}, rect.height() - 4, battColor);
+    painter.draw_vline({rect.right() - 2, rect.top() + 2}, rect.height() - 4, battColor);
+    painter.draw_hline({rect.left() + 1, rect.top() + 2}, rect.width() - 2, battColor);
+    painter.draw_hline({rect.left() + 1, rect.bottom() - 2}, rect.width() - 2, battColor);
+    // batt cap:
+    painter.draw_hline({rect.left() + 3, rect.top() + 1}, rect.width() - 6, battColor);
+    painter.draw_hline({rect.left() + 3, 0}, rect.width() - 6, battColor);
+    if (percent_ > 100) {  // error / unk
+        painter.draw_string({rect.left() + 2, rect.top() + 3}, font::fixed_5x8, Theme::getInstance()->bg_dark->foreground, Theme::getInstance()->bg_dark->background, "?");
+        return;
+    }
+    int8_t ppx = (rect.bottom() - 3) - (rect.top() + 2);                                // 11px max height to draw bars
+    int8_t ptd = (int8_t)((static_cast<float>(percent_) / 100.0f) * (float)ppx + 0.5);  // pixels to draw
+    int8_t pp = ppx - ptd;                                                              // pixels to start from
+
+    if (percent_ >= 70)
+        battColor = Theme::getInstance()->fg_green->foreground;
+    else if (percent_ >= 40)
+        battColor = Theme::getInstance()->fg_orange->foreground;
+    else
+        battColor = Theme::getInstance()->fg_red->foreground;
+    // fill the bars
+    for (int y = pp; y < ppx; y++) {
+        painter.draw_hline({rect.left() + 2, rect.top() + 3 + y}, rect.width() - 4, battColor);
+    }
+}
+
+/* BatteryTextField *************************************************************/
+
+BatteryTextField::BatteryTextField(Rect parent_rect, uint8_t percent)
+    : Widget(parent_rect) {
+    this->set_battery(percent, false);
+    set_focusable(true);
+}
+
+void BatteryTextField::paint(Painter& painter) {
+    Color bg = has_focus() || highlighted() ? Theme::getInstance()->fg_light->foreground : Theme::getInstance()->bg_dark->background;
+    ui::Rect rect = screen_rect();     // 2 * 8, 1 * 16
+    painter.fill_rectangle(rect, bg);  // clear
+    std::string txt_batt = percent_ <= 100 ? to_string_dec_uint(percent_) : "UNK";
+    int xdelta = 0;
+    if (txt_batt.length() == 1)
+        xdelta = 5;
+    else if (txt_batt.length() == 2)
+        xdelta = 2;
+    painter.draw_string({rect.left() + xdelta, rect.top()}, font::fixed_5x8, Theme::getInstance()->bg_dark->foreground, bg, txt_batt);
+    painter.draw_string({rect.left(), rect.top() + 8}, font::fixed_5x8, Theme::getInstance()->bg_dark->foreground, bg, (charge_) ? "+%" : " %");
+}
+
+void BatteryTextField::getAccessibilityText(std::string& result) {
+    result = to_string_dec_uint(percent_) + "%";
+}
+void BatteryTextField::getWidgetName(std::string& result) {
+    result = "Battery percent";
+}
+
+void BatteryTextField::set_battery(uint8_t percentage, bool charge) {
+    if (charge == charge_ && percent_ == percentage) return;
+    charge_ = charge;
+    percent_ = percentage;
+    set_dirty();
+}
+
+bool BatteryTextField::on_key(KeyEvent key) {
+    if (key == KeyEvent::Select && on_select) {
+        on_select();
+        return true;
+    }
+    return false;
+}
+
+bool BatteryTextField::on_touch(TouchEvent event) {
+    if (event.type == TouchEvent::Type::Start) {
+        focus();
+        return true;
+    }
+    if (event.type == TouchEvent::Type::End && on_select) {
+        on_select();
+        return true;
+    }
+    return false;
+}
+
 /* NumberField ***********************************************************/
 
 NumberField::NumberField(
@@ -1870,6 +2193,13 @@ NumberField::NumberField(
 
 int32_t NumberField::value() const {
     return value_;
+}
+
+void NumberField::getAccessibilityText(std::string& result) {
+    result = to_string_dec_int(value_);
+}
+void NumberField::getWidgetName(std::string& result) {
+    result = "NumberField";
 }
 
 void NumberField::set_value(int32_t new_value, bool trigger_change) {
@@ -1924,8 +2254,32 @@ bool NumberField::on_key(const KeyEvent key) {
 }
 
 bool NumberField::on_encoder(const EncoderEvent delta) {
+    int32_t old_value = value();
     set_value(value() + (delta * step));
+
+    if (on_wrap) {
+        if ((delta > 0) && (value() < old_value))
+            on_wrap(1);
+        else if ((delta < 0) && (value() > old_value))
+            on_wrap(-1);
+    }
     return true;
+}
+
+bool NumberField::on_keyboard(const KeyboardEvent key) {
+    if (key == 10) {
+        if (on_select) {
+            on_select(*this);
+            return true;
+        }
+    }
+    if (key == '+' || key == ' ') {
+        return on_encoder(1);
+    }
+    if (key == '-' || key == 8) {
+        return on_encoder(-1);
+    }
+    return false;
 }
 
 bool NumberField::on_touch(const TouchEvent event) {
@@ -2066,6 +2420,12 @@ const std::string& SymField::to_string() const {
     return value_;
 }
 
+void SymField::getAccessibilityText(std::string& result) {
+    result = value_;
+}
+void SymField::getWidgetName(std::string& result) {
+    result = "SymField";
+}
 void SymField::paint(Painter& painter) {
     Point p = screen_pos();
 
@@ -2085,8 +2445,8 @@ void SymField::paint(Painter& painter) {
 
             if (editing_ && n == selected_) {
                 // Use 'bg_blue' style to indicate in editing mode.
-                paint_style.foreground = Color::white();
-                paint_style.background = Color::blue();
+                paint_style.foreground = Theme::getInstance()->bg_darkest->foreground;
+                paint_style.background = Theme::getInstance()->fg_blue->foreground;
             }
         }
 
@@ -2271,7 +2631,7 @@ void Waveform::paint(Painter& painter) {
     x_inc = (float)screen_rect().size().width() / length_;
 
     // Clear
-    painter.fill_rectangle_unrolled8(screen_rect(), Color::black());
+    painter.fill_rectangle_unrolled8(screen_rect(), Theme::getInstance()->bg_darkest->background);
 
     if (digital_) {
         // Digital waveform: each value is an horizontal line
@@ -2364,13 +2724,13 @@ void VuMeter::paint(Painter& painter) {
                 lit = true;
 
             if (bar == 0)
-                color = lit ? Color::red() : Color::dark_grey();
+                color = lit ? Theme::getInstance()->fg_red->foreground : Theme::getInstance()->bg_dark->background;
             else if (bar == 1)
-                color = lit ? Color::orange() : Color::dark_grey();
+                color = lit ? Theme::getInstance()->fg_orange->foreground : Theme::getInstance()->bg_dark->background;
             else if ((bar == 2) || (bar == 3))
-                color = lit ? Color::yellow() : Color::dark_grey();
+                color = lit ? Theme::getInstance()->fg_yellow->foreground : Theme::getInstance()->bg_dark->background;
             else
-                color = lit ? Color::green() : Color::dark_grey();
+                color = lit ? Theme::getInstance()->fg_green->foreground : Theme::getInstance()->bg_dark->background;
 
             painter.fill_rectangle({pos.x(), pos.y() + (Coord)(bar * (LED_height + 1)), width, (Coord)LED_height}, color);
         }
@@ -2392,8 +2752,8 @@ void VuMeter::paint(Painter& painter) {
 
         // Draw max level
         if (max != prev_max) {
-            painter.draw_hline({marks_x, bottom - (height * prev_max) / 256}, 8, Color::black());
-            painter.draw_hline({marks_x, bottom - (height * max) / 256}, 8, Color::white());
+            painter.draw_hline({marks_x, bottom - (height * prev_max) / 256}, 8, Theme::getInstance()->bg_darkest->background);
+            painter.draw_hline({marks_x, bottom - (height * max) / 256}, 8, Theme::getInstance()->bg_darkest->foreground);
             if (prev_max == mark)
                 prev_mark = 0;  // Force mark refresh
             prev_max = max;
@@ -2402,8 +2762,8 @@ void VuMeter::paint(Painter& painter) {
 
     // Draw mark (forced refresh)
     if (mark) {
-        painter.draw_hline({marks_x, bottom - (height * prev_mark) / 256}, 8, Color::black());
-        painter.draw_hline({marks_x, bottom - (height * mark) / 256}, 8, Color::grey());
+        painter.draw_hline({marks_x, bottom - (height * prev_mark) / 256}, 8, Theme::getInstance()->bg_darkest->background);
+        painter.draw_hline({marks_x, bottom - (height * mark) / 256}, 8, Theme::getInstance()->fg_medium->foreground);
         prev_mark = mark;
     }
 }

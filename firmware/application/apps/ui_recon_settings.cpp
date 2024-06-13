@@ -30,6 +30,7 @@
 #include "freqman_db.hpp"
 #include "portapack.hpp"
 #include "portapack_persistent_memory.hpp"
+#include "file_path.hpp"
 
 using namespace std;
 using namespace portapack;
@@ -58,7 +59,7 @@ ReconSetupViewMain::ReconSetupViewMain(NavigationView& nav, Rect parent_rect, st
         auto open_view = nav.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
         open_view->on_changed = [this, &nav](std::filesystem::path new_file_path) {
-            if (new_file_path.native().find(freqman_dir.native()) == 0) {
+            if (new_file_path.native().find((u"/" / freqman_dir).native()) == 0) {
                 _input_file = new_file_path.stem().string();
                 text_input_file.set(_input_file);
             } else {
@@ -71,7 +72,7 @@ ReconSetupViewMain::ReconSetupViewMain(NavigationView& nav, Rect parent_rect, st
         auto open_view = nav.push<FileLoadView>(".TXT");
         open_view->push_dir(freqman_dir);
         open_view->on_changed = [this, &nav](std::filesystem::path new_file_path) {
-            if (new_file_path.native().find(freqman_dir.native()) == 0) {
+            if (new_file_path.native().find((u"/" / freqman_dir).native()) == 0) {
                 _output_file = new_file_path.stem().string();
                 button_choose_output_name.set_text(_output_file);
             } else {
@@ -99,8 +100,15 @@ void ReconSetupViewMore::save() {
     persistent_memory::set_recon_load_freqs(checkbox_load_freqs.value());
     persistent_memory::set_recon_load_ranges(checkbox_load_ranges.value());
     persistent_memory::set_recon_load_hamradios(checkbox_load_hamradios.value());
+    persistent_memory::set_recon_load_repeaters(checkbox_load_repeaters.value());
     persistent_memory::set_recon_update_ranges_when_recon(checkbox_update_ranges_when_recon.value());
     persistent_memory::set_recon_auto_record_locked(checkbox_auto_record_locked.value());
+    persistent_memory::set_recon_repeat_recorded(checkbox_repeat_recorded.value());
+    persistent_memory::set_recon_repeat_recorded_file_mode(field_repeat_file_mode.selected_index_value());
+    persistent_memory::set_recon_repeat_nb(field_repeat_nb.value());
+    persistent_memory::set_recon_repeat_amp(checkbox_repeat_amp.value());
+    persistent_memory::set_recon_repeat_gain(field_repeat_gain.value());
+    persistent_memory::set_recon_repeat_delay(field_repeat_delay.value());
 };
 
 void ReconSetupViewMain::focus() {
@@ -113,16 +121,58 @@ ReconSetupViewMore::ReconSetupViewMore(NavigationView& nav, Rect parent_rect)
     hidden(true);
 
     add_children({&checkbox_load_freqs,
+                  &checkbox_load_repeaters,
                   &checkbox_load_ranges,
                   &checkbox_load_hamradios,
                   &checkbox_update_ranges_when_recon,
-                  &checkbox_auto_record_locked});
+                  &checkbox_auto_record_locked,
+                  &checkbox_repeat_recorded,
+                  &field_repeat_file_mode,
+                  &text_repeat_nb,
+                  &field_repeat_nb,
+                  &checkbox_repeat_amp,
+                  &text_repeat_gain,
+                  &field_repeat_gain,
+                  &text_repeat_delay,
+                  &field_repeat_delay});
+
+    // tx options have to be in yellow to inform the users that activating them will make the device transmit
+    checkbox_repeat_recorded.set_style(Theme::getInstance()->fg_yellow);
+    field_repeat_file_mode.set_style(Theme::getInstance()->fg_yellow);
+    text_repeat_nb.set_style(Theme::getInstance()->fg_yellow);
+    field_repeat_nb.set_style(Theme::getInstance()->fg_yellow);
+    checkbox_repeat_amp.set_style(Theme::getInstance()->fg_yellow);
+    text_repeat_gain.set_style(Theme::getInstance()->fg_yellow);
+    field_repeat_gain.set_style(Theme::getInstance()->fg_yellow);
+    text_repeat_delay.set_style(Theme::getInstance()->fg_yellow);
+    field_repeat_delay.set_style(Theme::getInstance()->fg_yellow);
 
     checkbox_load_freqs.set_value(persistent_memory::recon_load_freqs());
+    checkbox_load_repeaters.set_value(persistent_memory::recon_load_repeaters());
     checkbox_load_ranges.set_value(persistent_memory::recon_load_ranges());
     checkbox_load_hamradios.set_value(persistent_memory::recon_load_hamradios());
     checkbox_update_ranges_when_recon.set_value(persistent_memory::recon_update_ranges_when_recon());
     checkbox_auto_record_locked.set_value(persistent_memory::recon_auto_record_locked());
+    checkbox_repeat_recorded.set_value(persistent_memory::recon_repeat_recorded());
+    field_repeat_file_mode.set_selected_index(persistent_memory::recon_repeat_recorded_file_mode());
+    checkbox_repeat_amp.set_value(persistent_memory::recon_repeat_amp());
+    field_repeat_nb.set_value(persistent_memory::recon_repeat_nb());
+    field_repeat_gain.set_value(persistent_memory::recon_repeat_gain());
+    field_repeat_delay.set_value(persistent_memory::recon_repeat_delay());
+
+    // tx warning modal
+    checkbox_repeat_recorded.on_select = [this, &nav](Checkbox&, bool v) {
+        if (v) {
+            nav.display_modal(
+                "TX WARNING",
+                "This activate TX ability\nin Recon !",
+                YESNO,
+                [this, &nav](bool choice) {
+                    if (!choice)
+                        checkbox_repeat_recorded.set_value(choice);
+                });
+        }
+    };
 };
 
 void ReconSetupViewMore::focus() {

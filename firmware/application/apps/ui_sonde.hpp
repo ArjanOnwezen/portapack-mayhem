@@ -1,6 +1,7 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2017 Furrtek
+ * Copyright (C) 2024 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -60,6 +61,8 @@ class SondeView : public View {
 
     SondeView(NavigationView& nav);
     ~SondeView();
+    SondeView(const SondeView& other) = delete;
+    SondeView& operator=(const SondeView& other) = delete;
 
     void focus() override;
 
@@ -72,15 +75,17 @@ class SondeView : public View {
         1750000 /* bandwidth */,
         2457600 /* sampling rate */
     };
-    app_settings::SettingsManager settings_{
-        "rx_sonde", app_settings::Mode::RX};
-
-    std::unique_ptr<SondeLogger> logger{};
     bool logging{false};
     bool use_crc{false};
-    bool beep{false};
+    app_settings::SettingsManager settings_{
+        "rx_sonde",
+        app_settings::Mode::RX,
+        {
+            {"logging"sv, &logging},
+            {"use_crc"sv, &use_crc},
+        }};
 
-    char geo_uri[32] = {};
+    std::unique_ptr<SondeLogger> logger{};
 
     sonde::GPS_data gps_info{};
     sonde::temp_humid temp_humid_info{};
@@ -89,14 +94,14 @@ class SondeView : public View {
     // AudioOutput audio_output { };
 
     Labels labels{
-        {{4 * 8, 2 * 16}, "Type:", Color::light_grey()},
-        {{6 * 8, 3 * 16}, "ID:", Color::light_grey()},
-        {{0 * 8, 4 * 16}, "DateTime:", Color::light_grey()},
+        {{4 * 8, 2 * 16}, "Type:", Theme::getInstance()->fg_light->foreground},
+        {{6 * 8, 3 * 16}, "ID:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 4 * 16}, "DateTime:", Theme::getInstance()->fg_light->foreground},
 
-        {{3 * 8, 5 * 16}, "Vbatt:", Color::light_grey()},
-        {{3 * 8, 6 * 16}, "Frame:", Color::light_grey()},
-        {{4 * 8, 7 * 16}, "Temp:", Color::light_grey()},
-        {{0 * 8, 8 * 16}, "Humidity:", Color::light_grey()}};
+        {{3 * 8, 5 * 16}, "Vbatt:", Theme::getInstance()->fg_light->foreground},
+        {{3 * 8, 6 * 16}, "Frame:", Theme::getInstance()->fg_light->foreground},
+        {{4 * 8, 7 * 16}, "Temp:", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 8 * 16}, "Humidity:", Theme::getInstance()->fg_light->foreground}};
 
     RxFrequencyField field_frequency{
         {0 * 8, 0 * 8},
@@ -116,11 +121,6 @@ class SondeView : public View {
 
     AudioVolumeField field_volume{
         {28 * 8, 0 * 16}};
-
-    Checkbox check_beep{
-        {22 * 8, 6 * 16},
-        3,
-        "Beep"};
 
     Checkbox check_log{
         {22 * 8, 8 * 16},
@@ -162,7 +162,8 @@ class SondeView : public View {
 
     GeoPos geopos{
         {0, 12 * 16},
-        GeoPos::alt_unit::METERS};
+        GeoPos::alt_unit::METERS,
+        GeoPos::spd_unit::HIDDEN};
 
     Button button_see_qr{
         {2 * 8, 15 * 16, 12 * 8, 3 * 16},
@@ -172,6 +173,8 @@ class SondeView : public View {
         {16 * 8, 15 * 16, 12 * 8, 3 * 16},
         "See on map"};
 
+    GeoMapView* geomap_view_{nullptr};
+
     MessageHandlerRegistration message_handler_packet{
         Message::ID::SondePacket,
         [this](Message* const p) {
@@ -180,8 +183,22 @@ class SondeView : public View {
             this->on_packet(packet);
         }};
 
+    MessageHandlerRegistration message_handler_gps{
+        Message::ID::GPSPosData,
+        [this](Message* const p) {
+            const auto message = static_cast<const GPSPosDataMessage*>(p);
+            this->on_gps(message);
+        }};
+    MessageHandlerRegistration message_handler_orientation{
+        Message::ID::OrientationData,
+        [this](Message* const p) {
+            const auto message = static_cast<const OrientationDataMessage*>(p);
+            this->on_orientation(message);
+        }};
+
+    void on_gps(const GPSPosDataMessage* msg);
+    void on_orientation(const OrientationDataMessage* msg);
     void on_packet(const sonde::Packet& packet);
-    char* float_to_char(float x, char* p);
 };
 
 } /* namespace ui */

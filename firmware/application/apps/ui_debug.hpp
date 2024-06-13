@@ -1,5 +1,7 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
+ * Copyright (C) 2024 Mark Thompson
+ * Copyright (C) 2024 u-foka
  *
  * This file is part of PortaPack.
  *
@@ -142,6 +144,7 @@ typedef enum {
 struct RegistersWidgetConfig {
     chip_type_t chip_type;
     uint32_t registers_count;
+    uint32_t registers_per_page;
     uint32_t register_bits;
 
     constexpr size_t legend_length() const {
@@ -194,6 +197,7 @@ class RegistersWidget : public Widget {
 
     void set_page(int32_t value) { page_number = value; }
     uint32_t page(void) { return page_number; }
+    uint32_t page_count(void) { return (config.registers_count + config.registers_per_page - 1) / config.registers_per_page; }
 
    private:
     const RegistersWidgetConfig config;
@@ -208,8 +212,8 @@ class RegistersWidget : public Widget {
 class RegistersView : public View {
    public:
     RegistersView(NavigationView& nav, const std::string& title, RegistersWidgetConfig&& config);
-
-    void focus();
+    void focus() override;
+    bool on_encoder(const EncoderEvent delta) override;
 
    private:
     Text text_title{};
@@ -229,8 +233,8 @@ class RegistersView : public View {
         "Write"};
 
     Labels labels{
-        {{1 * 8, 248}, "Reg:", Color::light_grey()},
-        {{8 * 8, 248}, "Data:", Color::light_grey()}};
+        {{1 * 8, 248}, "Reg:", Theme::getInstance()->fg_light->foreground},
+        {{8 * 8, 248}, "Data:", Theme::getInstance()->fg_light->foreground}};
 
     SymField field_write_reg_num{
         {5 * 8, 248},
@@ -249,18 +253,21 @@ class ControlsSwitchesWidget : public Widget {
         Rect parent_rect)
         : Widget{parent_rect},
           key_event_mask(0),
-          long_press_key_event_mask{0} {
+          long_press_key_event_mask{0},
+          last_delta{0} {
         set_focusable(true);
     }
 
     void on_show() override;
     bool on_key(const KeyEvent key) override;
+    bool on_encoder(const EncoderEvent delta) override;
 
     void paint(Painter& painter) override;
 
    private:
     uint8_t key_event_mask;
     uint8_t long_press_key_event_mask;
+    EncoderEvent last_delta;
 
     MessageHandlerRegistration message_handler_frame_sync{
         Message::ID::DisplayFrameSync,
@@ -281,8 +288,9 @@ class DebugControlsView : public View {
 
    private:
     Labels labels{
-        {{8 * 8, 1 * 16}, "Controls State", Color::white()},
-        {{0 * 8, 14 * 16}, "Long-Press Mode:", Color::grey()}};
+        {{8 * 8, 1 * 16}, "Controls State", Theme::getInstance()->bg_darkest->foreground},
+        {{0 * 8, 11 * 16}, "Dial:", Theme::getInstance()->fg_medium->foreground},
+        {{0 * 8, 14 * 16}, "Long-Press Mode:", Theme::getInstance()->fg_medium->foreground}};
 
     ControlsSwitchesWidget switches_widget{
         {80, 80, 80, 112},
@@ -325,12 +333,12 @@ class DebugMemoryDumpView : public View {
         "Done"};
 
     Labels labels{
-        {{5 * 8, 1 * 16}, "Dump Range to File", Color::yellow()},
-        {{0 * 8, 2 * 16}, "Starting Address: 0x", Color::light_grey()},
-        {{0 * 8, 3 * 16}, "Byte Count:       0x", Color::light_grey()},
-        {{3 * 8, 8 * 16}, "Read/Write Single Word", Color::yellow()},
-        {{0 * 8, 9 * 16}, "Memory Address:   0x", Color::light_grey()},
-        {{0 * 8, 10 * 16}, "Data Value:       0x", Color::light_grey()}};
+        {{5 * 8, 1 * 16}, "Dump Range to File", Theme::getInstance()->fg_yellow->foreground},
+        {{0 * 8, 2 * 16}, "Starting Address: 0x", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 3 * 16}, "Byte Count:       0x", Theme::getInstance()->fg_light->foreground},
+        {{3 * 8, 8 * 16}, "Read/Write Single Word", Theme::getInstance()->fg_yellow->foreground},
+        {{0 * 8, 9 * 16}, "Memory Address:   0x", Theme::getInstance()->fg_light->foreground},
+        {{0 * 8, 10 * 16}, "Data Value:       0x", Theme::getInstance()->fg_light->foreground}};
 
     SymField field_starting_address{
         {20 * 8, 2 * 16},
@@ -364,8 +372,6 @@ class DebugPmemView : public View {
     static constexpr uint8_t page_size{96};  // Must be multiply of 4 otherwise bit shifting for register view wont work properly
     static constexpr uint8_t page_count{(portapack::memory::map::backup_ram.size() + page_size - 1) / page_size};
 
-    Text text_page{{16, 16, 208, 16}};
-
     RegistersWidget registers_widget;
 
     Text text_checksum{{16, 232, 208, 16}};
@@ -385,7 +391,6 @@ class DebugScreenTest : public View {
     bool on_key(KeyEvent key) override;
     bool on_encoder(EncoderEvent delta) override;
     bool on_touch(TouchEvent event) override;
-    uint16_t semirand();
     void paint(Painter& painter) override;
 
    private:
@@ -418,12 +423,28 @@ class DebugPeripheralsMenuView : public BtnGridView {
    public:
     DebugPeripheralsMenuView(NavigationView& nav);
     std::string title() const override { return "Peripherals"; };
+
+   private:
+    NavigationView& nav_;
+    void on_populate() override;
+};
+
+class DebugReboot : public BtnGridView {
+   public:
+    DebugReboot(NavigationView& nav);
+
+   private:
+    void on_populate() override;
 };
 
 class DebugMenuView : public BtnGridView {
    public:
     DebugMenuView(NavigationView& nav);
     std::string title() const override { return "Debug"; };
+
+   private:
+    NavigationView& nav_;
+    void on_populate() override;
 };
 
 } /* namespace ui */

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2023 Kyle Reed
+ * Copyright (C) 2023 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -25,7 +26,6 @@
 #include "ui.hpp"
 #include "ui_navigation.hpp"
 #include "ui_painter.hpp"
-#include "ui_styles.hpp"
 #include "ui_widget.hpp"
 #include "file.hpp"
 

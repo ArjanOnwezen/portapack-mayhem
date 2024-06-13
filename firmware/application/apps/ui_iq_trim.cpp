@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2023 Kyle Reed
+ * Copyright (C) 2024 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -24,6 +25,7 @@
 #include "complex.hpp"
 #include "portapack.hpp"
 #include "ui_fileman.hpp"
+#include "file_path.hpp"
 
 using namespace portapack;
 namespace fs = std::filesystem;
@@ -46,14 +48,14 @@ IQTrimView::IQTrimView(NavigationView& nav)
 
     field_path.on_select = [this](TextField&) {
         auto open_view = nav_.push<FileLoadView>(".C*");
-        open_view->push_dir(u"CAPTURES");
+        open_view->push_dir(captures_dir);
         open_view->on_changed = [this](fs::path path) {
             open_file(path);
         };
     };
 
-    text_samples.set_style(&Styles::light_grey);
-    text_max.set_style(&Styles::light_grey);
+    text_samples.set_style(Theme::getInstance()->fg_light);
+    text_max.set_style(Theme::getInstance()->fg_light);
 
     field_start.on_change = [this](int32_t v) {
         if (field_end.value() < v)
@@ -147,9 +149,9 @@ void IQTrimView::refresh_ui() {
     // show max power in red if amplification is too high, causing clipping
     uint32_t clipping_limit = (fs::capture_file_sample_size(path_) == sizeof(complex8_t)) ? 0x80 : 0x8000;
     if ((field_amplify.value() * info_->max_iq) > clipping_limit)
-        text_max.set_style(&Styles::red);
+        text_max.set_style(Theme::getInstance()->fg_red);
     else
-        text_max.set_style(&Styles::light_grey);
+        text_max.set_style(Theme::getInstance()->fg_light);
 
     set_dirty();
 }

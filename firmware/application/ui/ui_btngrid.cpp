@@ -2,6 +2,9 @@
  * Copyright (C) 2014 Jared Boone, ShareBrained Technology, Inc.
  * Copyright (C) 2016 Furrtek
  * Copyright (C) 2019 Elia Yehuda (z4ziggy)
+ * Copyright (C) 2023 Mark Thompson
+ * Copyright (C) 2024 u-foka
+ * Copyleft (ↄ) 2024 zxkmm with the GPL license
  *
  * This file is part of PortaPack.
  *
@@ -41,7 +44,7 @@ BtnGridView::BtnGridView(
 
     add_child(&arrow_more);
     arrow_more.set_focusable(false);
-    arrow_more.set_foreground(Color::black());
+    arrow_more.set_foreground(Theme::getInstance()->bg_darkest->background);
 }
 
 BtnGridView::~BtnGridView() {
@@ -95,9 +98,9 @@ void BtnGridView::set_arrow_enabled(bool enabled) {
 
 void BtnGridView::on_tick_second() {
     if (more && blink)
-        arrow_more.set_foreground(Color::white());
+        arrow_more.set_foreground(Theme::getInstance()->bg_darkest->foreground);
     else
-        arrow_more.set_foreground(Color::black());
+        arrow_more.set_foreground(Theme::getInstance()->bg_darkest->background);
 
     blink = !blink;
 
@@ -105,7 +108,14 @@ void BtnGridView::on_tick_second() {
 }
 
 void BtnGridView::clear() {
+    // clear vector and release memory, not using swap since it's causing capture to glitch/fault
     menu_items.clear();
+
+    for (auto& item : menu_item_views)
+        remove_child(item.get());
+
+    // clear vector and release memory, not using swap since it's causing capture to glitch/fault
+    menu_item_views.clear();
 }
 
 void BtnGridView::add_items(std::initializer_list<GridItem> new_items) {
@@ -124,8 +134,22 @@ void BtnGridView::add_item(GridItem new_item) {
     }
 }
 
+void BtnGridView::insert_item(GridItem new_item, uint8_t position) {
+    if (!blacklisted_app(new_item)) {
+        if (position < menu_items.size()) {
+            auto pos_iter = menu_items.begin() + position;
+            menu_items.insert(pos_iter, new_item);
+            update_items();
+        } else {
+            menu_items.push_back(new_item);
+            update_items();
+        }
+    }
+}
+
 void BtnGridView::update_items() {
     size_t i = 0;
+    Color bg_color = portapack::persistent_memory::menu_color();
 
     if ((menu_items.size()) > (displayed_max + offset)) {
         more = true;
@@ -146,6 +170,7 @@ void BtnGridView::update_items() {
             item->set_text(menu_items[i + offset].text);
             item->set_bitmap(menu_items[i + offset].bitmap);
             item->set_color(menu_items[i + offset].color);
+            item->set_bg_color(bg_color);
             item->on_select = menu_items[i + offset].on_select;
             item->set_dirty();
         }
@@ -170,15 +195,19 @@ bool BtnGridView::set_highlighted(int32_t new_value) {
     if (((uint32_t)new_value > offset) && ((new_value - offset) >= displayed_max)) {
         // Shift BtnGridView up
         highlighted_item = new_value;
+        // rounding up new offset to next multiple of rows
         offset = new_value - displayed_max + rows_;
+        offset -= (offset % rows_);
         update_items();
-        set_dirty();
+        // refresh whole screen (display flickers) only if scrolling last row up and a blank button is needed at the bottom
+        if ((new_value + rows_ >= item_count) && (item_count % rows_) != 0)
+            set_dirty();
     } else if ((uint32_t)new_value < offset) {
         // Shift BtnGridView down
         highlighted_item = new_value;
         offset = (new_value / rows_) * rows_;
         update_items();
-        set_dirty();
+        // no need to set_dirty() here since all buttons have been repainted
     } else {
         // Just update highlight
         highlighted_item = new_value;
@@ -200,9 +229,21 @@ void BtnGridView::on_focus() {
 
 void BtnGridView::on_blur() {
 #if 0
-	if (!keep_highlight)
-		item_view(highlighted_item - offset)->unhighlight();
+    if (!keep_highlight)
+        item_view(highlighted_item - offset)->unhighlight();
 #endif
+}
+
+void BtnGridView::on_show() {
+    on_populate();
+
+    View::on_show();
+}
+
+void BtnGridView::on_hide() {
+    View::on_hide();
+
+    clear();
 }
 
 bool BtnGridView::on_key(const KeyEvent key) {

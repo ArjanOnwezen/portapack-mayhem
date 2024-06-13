@@ -73,6 +73,7 @@ class RecordView : public View {
     bool is_active() const;
 
     void set_filename_date_frequency(bool set);
+    void set_filename_as_is(bool set);
 
    private:
     void toggle();
@@ -87,11 +88,17 @@ class RecordView : public View {
 
     OversampleRate get_oversample_rate(uint32_t sample_rate);
 
+    void on_gps(const GPSPosDataMessage* msg);
     // bool pitch_rssi_enabled = false;
 
     // Time Stamp
     bool filename_date_frequency = false;
+    bool filename_as_is = false;
     rtc::RTC datetime{};
+
+    float latitude = 0;  // for wardriwing with ext module
+    float longitude = 0;
+    uint8_t satinuse = 0;  // to see if there was enough sats used or not
 
     const std::filesystem::path filename_stem_pattern;
     const std::filesystem::path folder;
@@ -106,21 +113,21 @@ class RecordView : public View {
     TrimProgressUI trim_ui{};
 
     Rectangle rect_background{
-        Color::black()};
+        Theme::getInstance()->bg_darkest->background};
 
     /*ImageButton button_pitch_rssi {
                 { 2, 0 * 16, 3 * 8, 1 * 16 },
                 &bitmap_rssipwm,
-                Color::orange(),
-                Color::black()
+                Theme::getInstance()->fg_orange->foreground,
+                Theme::getInstance()->fg_orange->background
         };*/
 
     ImageButton button_record{
         //{ 4 * 8, 0 * 16, 2 * 8, 1 * 16 },
         {0 * 8, 0 * 16, 2 * 8, 1 * 16},
         &bitmap_record,
-        Color::red(),
-        Color::black()};
+        Theme::getInstance()->fg_red->foreground,
+        Theme::getInstance()->fg_red->background};
 
     Text text_record_filename{
         {7 * 8, 0 * 16, 8 * 8, 16},
@@ -137,6 +144,12 @@ class RecordView : public View {
         "",
     };
 
+    Image gps_icon{
+        {2 * 8 + 1, 0 * 16, 2 * 8, 1 * 16},
+        &bitmap_target,
+        Theme::getInstance()->bg_darkest->foreground,
+        Theme::getInstance()->bg_darkest->background};
+
     std::unique_ptr<CaptureThread> capture_thread{};
 
     MessageHandlerRegistration message_handler_capture_thread_error{
@@ -144,6 +157,13 @@ class RecordView : public View {
         [this](const Message* const p) {
             const auto message = *reinterpret_cast<const CaptureThreadDoneMessage*>(p);
             this->handle_capture_thread_done(message.error);
+        }};
+
+    MessageHandlerRegistration message_handler_gps{
+        Message::ID::GPSPosData,
+        [this](Message* const p) {
+            const auto message = static_cast<const GPSPosDataMessage*>(p);
+            this->on_gps(message);
         }};
 };
 

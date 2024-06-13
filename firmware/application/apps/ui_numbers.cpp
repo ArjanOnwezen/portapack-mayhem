@@ -21,7 +21,6 @@
  */
 
 #include "ui_numbers.hpp"
-#include "ui_styles.hpp"
 #include "string_format.hpp"
 
 #include "portapack.hpp"
@@ -145,7 +144,7 @@ void NumbersStationView::on_tick_second() {
     armed_blink = not armed_blink;
 
     if (armed_blink)
-        check_armed.set_style(&Styles::red);
+        check_armed.set_style(Theme::getInstance()->fg_red);
     else
         check_armed.set_style(&style());
 
@@ -277,18 +276,9 @@ NumbersStationView::NumbersStationView(
     symfield_code.set_offset(10, 12);  // End
 
     /*
-        rtc::RTC datetime;
-        rtcGetTime(&RTCD1, &datetime);
-
-        // Thanks, Sakamoto-sama !
-        y = datetime.year();
-        m = datetime.month();
-        d = datetime.day();
-        y -= m < 3;
-        dayofweek = (y + y/4 - y/100 + y/400 + month_table[m-1] + d) % 7;
-
+        dayofweek = rtc_time::current_day_of_week();
         text_title.set(day_of_week[dayofweek]);
-*/
+    */
 
     button_exit.on_select = [&nav](Button&) {
         nav.pop();

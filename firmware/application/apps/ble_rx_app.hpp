@@ -36,12 +36,13 @@
 #include "log_file.hpp"
 #include "utility.hpp"
 #include "usb_serial_thread.hpp"
+#include "file_path.hpp"
 
 #include "recent_entries.hpp"
 
 class BLELogger {
    public:
-    Optional<File::Error> append(const std::string& filename) {
+    Optional<File::Error> append(const std::filesystem::path& filename) {
         return log_file.append(filename);
     }
 
@@ -133,28 +134,28 @@ class BleRecentEntryDetailView : public View {
     void on_save_file(const std::string value, BLETxPacket packetToSave);
     bool saveFile(const std::filesystem::path& path, BLETxPacket packetToSave);
     std::string packetFileBuffer{};
-    std::filesystem::path packet_save_path{u"BLERX/Lists/????.csv"};
+    std::filesystem::path packet_save_path{blerx_dir / u"Lists/????.csv"};
 
     static constexpr uint8_t total_data_lines{5};
 
     Labels label_mac_address{
-        {{0 * 8, 0 * 16}, "Mac Address:", Color::light_grey()}};
+        {{0 * 8, 0 * 16}, "Mac Address:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_mac_address{
         {12 * 8, 0 * 16, 17 * 8, 16},
         "-"};
 
     Labels label_pdu_type{
-        {{0 * 8, 1 * 16}, "PDU Type:", Color::light_grey()}};
+        {{0 * 8, 1 * 16}, "PDU Type:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_pdu_type{
         {9 * 8, 1 * 16, 17 * 8, 16},
         "-"};
 
     Labels labels{
-        {{0 * 8, 3 * 16}, "Len", Color::light_grey()},
-        {{5 * 8, 3 * 16}, "Type", Color::light_grey()},
-        {{10 * 8, 3 * 16}, "Value", Color::light_grey()},
+        {{0 * 8, 3 * 16}, "Len", Theme::getInstance()->fg_light->foreground},
+        {{5 * 8, 3 * 16}, "Type", Theme::getInstance()->fg_light->foreground},
+        {{10 * 8, 3 * 16}, "Value", Theme::getInstance()->fg_light->foreground},
     };
 
     Button button_send{
@@ -215,6 +216,7 @@ class BLERxView : public View {
     uint8_t sort_index{0};
     std::string filter{};
     bool logging{false};
+    bool serial_logging{false};
 
     bool name_enable{true};
     app_settings::SettingsManager settings_{
@@ -225,6 +227,8 @@ class BLERxView : public View {
             {"sort_index"sv, &sort_index},
             {"filter"sv, &filter},
             {"log"sv, &logging},
+            // disabled to always start without USB serial activated until we can make it non blocking if not connected
+            // {"serial_log"sv, &serial_logging},
             {"name"sv, &name_enable},
         }};
 
@@ -247,9 +251,9 @@ class BLERxView : public View {
     uint64_t total_count = 0;
     std::vector<std::string> searchList{};
 
-    std::filesystem::path find_packet_path{u"BLERX/Find/????.TXT"};
-    std::filesystem::path log_packets_path{u"BLERX/Logs/????.TXT"};
-    std::filesystem::path packet_save_path{u"BLERX/Lists/????.csv"};
+    std::filesystem::path find_packet_path{blerx_dir / u"Find/????.TXT"};
+    std::filesystem::path log_packets_path{blerx_dir / u"Logs/????.TXT"};
+    std::filesystem::path packet_save_path{blerx_dir / u"Lists/????.csv"};
 
     static constexpr auto header_height = 4 * 16;
     static constexpr auto switch_button_height = 3 * 16;
@@ -282,7 +286,7 @@ class BLERxView : public View {
         {24 * 8, 5, 6 * 8, 4}};
 
     Labels label_sort{
-        {{0 * 8, 3 * 8}, "Sort:", Color::light_grey()}};
+        {{0 * 8, 3 * 8}, "Sort:", Theme::getInstance()->fg_light->foreground}};
 
     OptionsField options_sort{
         {5 * 8, 3 * 8},
@@ -314,11 +318,17 @@ class BLERxView : public View {
         "Find"};
 
     Labels label_found{
-        {{5 * 8, 6 * 8}, "Found:", Color::light_grey()}};
+        {{5 * 8, 6 * 8}, "Found:", Theme::getInstance()->fg_light->foreground}};
 
     Text text_found_count{
         {11 * 8, 3 * 16, 20 * 8, 16},
         "0/0"};
+
+    Checkbox check_serial_log{
+        {17 * 8, 3 * 16 - 2},
+        7,
+        "USB Log",
+        true};
 
     Console console{
         {0, 4 * 16, 240, 240}};

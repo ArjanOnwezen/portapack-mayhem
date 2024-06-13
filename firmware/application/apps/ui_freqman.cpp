@@ -29,8 +29,8 @@
 #include "rtc_time.hpp"
 #include "tone_key.hpp"
 #include "ui_receiver.hpp"
-#include "ui_styles.hpp"
 #include "utility.hpp"
+#include "file_path.hpp"
 
 #include <memory>
 
@@ -228,7 +228,7 @@ void FrequencyManagerView::on_edit_freq() {
 
 void FrequencyManagerView::on_edit_desc() {
     temp_buffer_ = current_entry().description;
-    text_prompt(nav_, temp_buffer_, desc_edit_max, [this](std::string& new_desc) {
+    text_prompt(nav_, temp_buffer_, freqman_max_desc_size, [this](std::string& new_desc) {
         auto entry = current_entry();
         entry.description = std::move(new_desc);
         db_.replace_entry(current_index(), entry);
@@ -412,18 +412,19 @@ void FrequencyEditView::refresh_ui() {
 
     auto is_range = entry_.type == freqman_type::Range;
     auto is_ham = entry_.type == freqman_type::HamRadio;
-    auto has_freq_b = is_range || is_ham;
+    auto is_repeater = entry_.type == freqman_type::Repeater;
+    auto has_freq_b = is_range || is_ham || is_repeater;
 
-    field_freq_b.set_style(has_freq_b ? &Styles::white : &Styles::grey);
-    field_step.set_style(is_range ? &Styles::white : &Styles::grey);
-    field_tone.set_style(is_ham ? &Styles::white : &Styles::grey);
+    field_freq_b.set_style(has_freq_b ? Theme::getInstance()->bg_darkest : Theme::getInstance()->fg_medium);
+    field_step.set_style(is_range ? Theme::getInstance()->bg_darkest : Theme::getInstance()->fg_medium);
+    field_tone.set_style(is_ham ? Theme::getInstance()->bg_darkest : Theme::getInstance()->fg_medium);
 
     if (is_valid(entry_)) {
         text_validation.set("Valid");
-        text_validation.set_style(&Styles::green);
+        text_validation.set_style(Theme::getInstance()->fg_green);
     } else {
         text_validation.set("Error");
-        text_validation.set_style(&Styles::red);
+        text_validation.set_style(Theme::getInstance()->fg_red);
     }
 }
 

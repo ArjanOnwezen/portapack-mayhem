@@ -27,6 +27,8 @@
 #ifndef __UI_BLESPAM_H__
 #define __UI_BLESPAM_H__
 
+#define BLESPMUSECONSOLE 1
+
 #include "ui.hpp"
 #include "ui_language.hpp"
 #include "ui_navigation.hpp"
@@ -47,7 +49,10 @@ enum ATK_TYPE {
     ATK_IOS,
     ATK_IOS_CRASH,
     ATK_WINDOWS,
-    ATK_SAMSUNG
+    ATK_SAMSUNG,
+    ATK_NAMESPAM,
+    ATK_ALL_SAFE,
+    ATK_ALL
 };
 enum PKT_TYPE {
     PKT_TYPE_INVALID_TYPE,
@@ -111,9 +116,10 @@ class BLESpamView : public View {
         LanguageHelper::currentMessages[LANG_START]};
     Checkbox chk_randdev{{100, 16}, 10, "Rnd device", true};
 
+#ifdef BLESPMUSECONSOLE
     Console console{
         {0, 70, 240, 220}};
-
+#endif
     OptionsField options_atkmode{
         {0 * 8, 2 * 8},
         10,
@@ -121,7 +127,10 @@ class BLESpamView : public View {
          {"iOs", 1},
          {"iOs crash", 2},
          {"Windows", 3},
-         {"Samsung", 4}}};
+         {"Samsung", 4},
+         {"NameSpam", 5},
+         {"All-Safe", 6},
+         {"All", 7}}};
 
     bool is_running{false};
 
@@ -134,7 +143,7 @@ class BLESpamView : public View {
     bool randomDev{true};
 
     uint8_t channel_number = 37;
-    char mac[13] = "010203040507";
+    char mac[13] = "010203040407";
     char advertisementData[63] = {"03032CFE06162CFED5A59E020AB4\0"};
     PKT_TYPE pduType = {PKT_TYPE_DISCOVERY};
 
@@ -145,6 +154,9 @@ class BLESpamView : public View {
     void createIosPacket(bool crash);
     void createSamsungPacket();
     void createWindowsPacket();
+    void createNameSpamPacket();
+    void createAnyPacket(bool safe);
+    void createPacket(ATK_TYPE attackType);
     void changePacket(bool forced);
     void on_tx_progress(const bool done);
 
@@ -160,6 +172,8 @@ class BLESpamView : public View {
             const auto message = *reinterpret_cast<const TXProgressMessage*>(p);
             this->on_tx_progress(message.done);
         }};
+
+    uint8_t packet[80];
 
     // continuity
 
@@ -227,7 +241,7 @@ class BLESpamView : public View {
     static const uint16_t fastpairModels_count;
     typedef struct {
         uint32_t value;
-        const char* name;  // could be moved too
+        // const char* name;  // could be moved too
     } fpUi32;
     static const fpUi32 fastpairModels[];
 

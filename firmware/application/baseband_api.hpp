@@ -63,7 +63,7 @@ void set_tone(const uint32_t index, const uint32_t delta, const uint32_t duratio
 void set_tones_config(const uint32_t bw, const uint32_t pre_silence, const uint16_t tone_count, const bool dual_tone, const bool audio_out);
 void kill_tone();
 void set_sstv_data(const uint8_t vis_code, const uint32_t pixel_duration);
-void set_audiotx_config(const uint32_t divider, const float deviation_hz, const float audio_gain, uint8_t audio_shift_bits_s16, const uint32_t tone_key_delta, const bool am_enabled, const bool dsb_enabled, const bool usb_enabled, const bool lsb_enabled);
+void set_audiotx_config(const uint32_t divider, const float deviation_hz, const float audio_gain, uint8_t audio_shift_bits_s16, uint8_t bits_per_sample, const uint32_t tone_key_delta, const bool am_enabled, const bool dsb_enabled, const bool usb_enabled, const bool lsb_enabled);
 void set_fifo_data(const int8_t* data);
 void set_pitch_rssi(int32_t avg, bool enabled);
 void set_afsk_data(const uint32_t afsk_samples_per_bit, const uint32_t afsk_phase_inc_mark, const uint32_t afsk_phase_inc_space, const uint8_t afsk_repeat, const uint32_t afsk_bw, const uint8_t symbol_count);
@@ -88,9 +88,12 @@ void set_spectrum(const size_t sampling_rate, const size_t trigger);
 void set_siggen_tone(const uint32_t tone);
 void set_siggen_config(const uint32_t bw, const uint32_t shape, const uint32_t duration);
 void set_spectrum_painter_config(const uint16_t width, const uint16_t height, bool update, int32_t bw);
-void set_weather();
-void set_subghzd(uint8_t modulation);
-void request_beep();
+void set_subghzd_config(uint8_t modulation, uint32_t sampling_rate);
+
+void request_roger_beep();
+void request_rssi_beep();
+void request_beep_stop();
+void request_audio_beep(uint32_t freq, uint32_t sample_rate, uint32_t duration_ms);
 
 void run_image(const portapack::spi_flash::image_tag_t image_tag);
 void run_prepared_image(const uint32_t m4_code);

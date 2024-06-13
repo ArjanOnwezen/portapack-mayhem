@@ -211,6 +211,7 @@ void set_audiotx_config(
     const float deviation_hz,
     const float audio_gain,
     uint8_t audio_shift_bits_s16,
+    uint8_t bits_per_sample,
     const uint32_t tone_key_delta,
     const bool am_enabled,
     const bool dsb_enabled,
@@ -221,6 +222,7 @@ void set_audiotx_config(
         deviation_hz,
         audio_gain,
         audio_shift_bits_s16,
+        bits_per_sample,
         tone_key_delta,
         (float)persistent_memory::tone_mix() / 100.0f,
         am_enabled,
@@ -319,13 +321,8 @@ void set_spectrum_painter_config(const uint16_t width, const uint16_t height, bo
     send_message(&message);
 }
 
-void set_weather() {
-    const SubGhzFPRxConfigureMessage message{0};
-    send_message(&message);
-}
-
-void set_subghzd(uint8_t modulation = 0) {
-    const SubGhzFPRxConfigureMessage message{modulation};
+void set_subghzd_config(uint8_t modulation = 0, uint32_t sampling_rate = 0) {
+    const SubGhzFPRxConfigureMessage message{modulation, sampling_rate};
     send_message(&message);
 }
 
@@ -431,8 +428,25 @@ void replay_stop() {
     send_message(&message);
 }
 
-void request_beep() {
-    RequestSignalMessage message{RequestSignalMessage::Signal::BeepRequest};
+void request_beep(RequestSignalMessage::Signal beep_type) {
+    RequestSignalMessage message{beep_type};
+    send_message(&message);
+}
+
+void request_roger_beep() {
+    request_beep(RequestSignalMessage::Signal::RogerBeepRequest);
+}
+
+void request_rssi_beep() {
+    request_beep(RequestSignalMessage::Signal::RSSIBeepRequest);
+}
+
+void request_beep_stop() {
+    request_beep(RequestSignalMessage::Signal::BeepStopRequest);
+}
+
+void request_audio_beep(uint32_t freq, uint32_t sample_rate, uint32_t duration_ms) {
+    AudioBeepMessage message{freq, sample_rate, duration_ms};
     send_message(&message);
 }
 

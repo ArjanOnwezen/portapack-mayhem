@@ -144,6 +144,7 @@ Continuous (Fox-oring)
 
 #include "rffc507x.hpp" /* c/m, avoiding initial short ON Ant_DC_Bias pulse, from cold reset  */
 rffc507x::RFFC507x first_if;
+ui::SystemView* system_view_ptr;
 
 static void event_loop() {
     static ui::Context context;
@@ -151,17 +152,22 @@ static void event_loop() {
         context,
         portapack::display.screen_rect()};
 
+    system_view_ptr = &system_view;
+
     EventDispatcher event_dispatcher{&system_view, context};
     static MessageHandlerRegistration message_handler_display_sleep{
         Message::ID::DisplaySleep,
         [&event_dispatcher](const Message* const) {
             event_dispatcher.set_display_sleep(true);
         }};
-
+    portapack::setEventDispatcherToUSBSerial(&event_dispatcher);
+    system_view.get_navigation_view()->handle_autostart();
     event_dispatcher.run();
 }
 
 int main(void) {
+    first_if.init(); /* To avoid initial short Ant_DC_Bias pulse ,we need quick set up GP01_RFF507X =1 */
+
     if (config_mode_should_enter()) {
         config_mode_clear();
         config_mode_run();
@@ -169,25 +175,32 @@ int main(void) {
 
     config_mode_set();
 
-    first_if.init(); /* To avoid initial short Ant_DC_Bias pulse ,we need quick set up GP01_RFF507X =1 */
-    if (portapack::init()) {
-        portapack::display.init();
-        config_mode_clear();
+    switch (portapack::init()) {
+        case portapack::init_status_t::INIT_HACKRF_CPLD_FAILED:
+            portapack::init_error = "HACKRF CPLD FAILED";
+            [[fallthrough]];
 
-        // sdcStart(&SDCD1, nullptr); // Commented out as now happens in portapack.cpp
+        case portapack::init_status_t::INIT_SUCCESS:
 
-        // controls_init(); // Commented out as now happens in portapack.cpp
-        lcd_frame_sync_configure();
-        rtc_interrupt_enable();
+            config_mode_clear();
 
-        event_loop();
+            lcd_frame_sync_configure();
+            rtc_interrupt_enable();
 
-        sdcDisconnect(&SDCD1);
-        sdcStop(&SDCD1);
+            Theme::SetTheme((Theme::ThemeId)portapack::persistent_memory::ui_theme_id());  // load theme
 
-        portapack::shutdown();
-    } else {
-        config_mode_clear();
+            event_loop();
+
+            sdcDisconnect(&SDCD1);
+            sdcStop(&SDCD1);
+
+            portapack::shutdown();
+            break;
+
+        case portapack::init_status_t::INIT_NO_PORTAPACK:
+        case portapack::init_status_t::INIT_PORTAPACK_CPLD_FAILED:
+            config_mode_clear();
+            break;
     }
 
     m4_init(portapack::spi_flash::image_tag_hackrf, portapack::memory::map::m4_code_hackrf, true);

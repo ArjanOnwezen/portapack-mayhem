@@ -22,13 +22,24 @@
  */
 
 #include "ui_recon.hpp"
-#include "ui_fileman.hpp"
 #include "ui_freqman.hpp"
 #include "capture_app.hpp"
 #include "convert.hpp"
 #include "file.hpp"
 #include "file_reader.hpp"
 #include "tone_key.hpp"
+#include "replay_app.hpp"
+#include "string_format.hpp"
+#include "ui_fileman.hpp"
+#include "io_file.hpp"
+#include "io_convert.hpp"
+#include "oversample.hpp"
+#include "baseband_api.hpp"
+#include "metadata_file.hpp"
+#include "portapack.hpp"
+#include "portapack_persistent_memory.hpp"
+#include "utility.hpp"
+#include "replay_thread.hpp"
 
 using namespace portapack;
 using namespace tonekey;
@@ -36,6 +47,36 @@ using portapack::memory::map::backup_ram;
 namespace fs = std::filesystem;
 
 namespace ui {
+
+void ReconView::reload_restart_recon() {
+    // force reload of current
+    change_mode(field_mode.selected_index_value());
+    uint8_t previous_index = current_index;
+    reset_indexes();
+    frequency_file_load();
+    current_index = previous_index;
+    handle_retune();
+    if (frequency_list.size() > 0) {
+        if (fwd) {
+            button_dir.set_text("FW>");
+        } else {
+            button_dir.set_text("<RW");
+        }
+        recon_resume();
+    }
+    if (scanner_mode) {
+        file_name.set_style(Theme::getInstance()->fg_red);
+        button_scanner_mode.set_style(Theme::getInstance()->fg_red);
+        button_scanner_mode.set_text("SCAN");
+    } else {
+        file_name.set_style(Theme::getInstance()->fg_blue);
+        button_scanner_mode.set_style(Theme::getInstance()->fg_blue);
+        button_scanner_mode.set_text("RECON");
+    }
+    if (frequency_list.size() > FREQMAN_MAX_PER_FILE) {
+        file_name.set_style(Theme::getInstance()->fg_yellow);
+    }
+}
 
 void ReconView::check_update_ranges_from_current() {
     if (frequency_list.size() && current_is_valid() && current_entry().type == freqman_type::Range) {
@@ -63,25 +104,30 @@ freqman_entry& ReconView::current_entry() {
 
 void ReconView::set_loop_config(bool v) {
     continuous = v;
-    button_loop_config.set_style(v ? &Styles::green : &Styles::white);
+    button_loop_config.set_style(v ? Theme::getInstance()->fg_green : Theme::getInstance()->bg_darkest);
     persistent_memory::set_recon_continuous(continuous);
 }
 
-void ReconView::recon_stop_recording() {
+void ReconView::recon_stop_recording(bool exiting) {
     if (is_recording) {
-        if (field_mode.selected_index_value() == SPEC_MODULATION)
-            button_audio_app.set_text("RAW");
-        else
-            button_audio_app.set_text("AUDIO");
-        button_audio_app.set_style(&Styles::white);
         record_view->stop();
-        button_config.set_style(&Styles::white);  // disable config while recording as it's causing an IO error pop up at exit
         is_recording = false;
+        if (field_mode.selected_index_value() == SPEC_MODULATION) {
+            button_audio_app.set_text("RAW");
+            // repeater mode
+            if (!exiting && persistent_memory::recon_repeat_recorded()) {
+                start_repeat();
+            }
+        } else {
+            button_audio_app.set_text("AUDIO");
+        }
+        button_audio_app.set_style(Theme::getInstance()->bg_darkest);
+        button_config.set_style(Theme::getInstance()->bg_darkest);
     }
 }
 
 void ReconView::clear_freqlist_for_ui_action() {
-    recon_stop_recording();
+    recon_stop_recording(false);
     if (field_mode.selected_index_value() != SPEC_MODULATION)
         audio::output::stop();
     // flag to detect and reload frequency_list
@@ -111,6 +157,9 @@ void ReconView::update_description() {
             case freqman_type::HamRadio:
                 description = "H: ";
                 break;
+            case freqman_type::Repeater:
+                description = "L: ";
+                break;
             default:
                 description = "S: ";
         }
@@ -122,23 +171,23 @@ void ReconView::update_description() {
 void ReconView::colorize_waits() {
     // colorize wait on match
     if (wait == 0) {
-        field_wait.set_style(&Styles::blue);
+        field_wait.set_style(Theme::getInstance()->fg_blue);
     } else if (wait >= 500) {
-        field_wait.set_style(&Styles::white);
+        field_wait.set_style(Theme::getInstance()->bg_darkest);
     } else if (wait > -500 && wait < 500) {
-        field_wait.set_style(&Styles::red);
+        field_wait.set_style(Theme::getInstance()->fg_red);
     } else if (wait <= -500) {
-        field_wait.set_style(&Styles::green);
+        field_wait.set_style(Theme::getInstance()->fg_green);
     }
     // colorize lock time if in SPARSE mode as in continuous the lock_wait time is disarmed at first lock count
     if (recon_match_mode == RECON_MATCH_SPARSE) {
         if ((recon_lock_duration / STATS_UPDATE_INTERVAL) <= recon_lock_nb_match) {
-            field_lock_wait.set_style(&Styles::yellow);
+            field_lock_wait.set_style(Theme::getInstance()->fg_yellow);
         } else {
-            field_lock_wait.set_style(&Styles::white);
+            field_lock_wait.set_style(Theme::getInstance()->bg_darkest);
         }
     } else {
-        field_lock_wait.set_style(&Styles::white);
+        field_lock_wait.set_style(Theme::getInstance()->bg_darkest);
     }
 }
 
@@ -182,6 +231,7 @@ void ReconView::load_persisted_settings() {
     load_freqs = persistent_memory::recon_load_freqs();
     load_ranges = persistent_memory::recon_load_ranges();
     load_hamradios = persistent_memory::recon_load_hamradios();
+    load_repeaters = persistent_memory::recon_load_repeaters();
     update_ranges = persistent_memory::recon_update_ranges_when_recon();
     auto_record_locked = persistent_memory::recon_auto_record_locked();
 }
@@ -209,17 +259,17 @@ void ReconView::recon_redraw() {
         text_nb_locks.set(to_string_dec_uint(freq_lock) + "/" + to_string_dec_uint(recon_lock_nb_match));
         if (freq_lock == 0) {
             // NO FREQ LOCK, ONGOING STANDARD SCANNING
-            big_display.set_style(&Styles::white);
+            big_display.set_style(Theme::getInstance()->bg_darkest);
             if (recon)
                 button_pause.set_text("<PAUSE>");
             else
                 button_pause.set_text("<RESUME>");
         } else if (freq_lock == 1 && recon_lock_nb_match != 1) {
             // STARTING LOCK FREQ
-            big_display.set_style(&Styles::yellow);
+            big_display.set_style(Theme::getInstance()->fg_yellow);
             button_pause.set_text("<SKPLCK>");
         } else if (freq_lock >= recon_lock_nb_match) {
-            big_display.set_style(&Styles::green);
+            big_display.set_style(Theme::getInstance()->fg_green);
             button_pause.set_text("<UNLOCK>");
         }
     }
@@ -265,9 +315,16 @@ void ReconView::focus() {
 }
 
 ReconView::~ReconView() {
-    recon_stop_recording();
+    if (recon_tx) {
+        replay_thread.reset();
+    }
+
+    recon_stop_recording(true);
+
     if (field_mode.selected_index_value() != SPEC_MODULATION)
         audio::output::stop();
+
+    transmitter_model.disable();
     receiver_model.disable();
     baseband::shutdown();
 }
@@ -275,9 +332,20 @@ ReconView::~ReconView() {
 ReconView::ReconView(NavigationView& nav)
     : nav_{nav} {
     chrono_start = chTimeNow();
+
+    tx_view.hidden(true);
+
+    // set record View
     record_view = std::make_unique<RecordView>(Rect{0, 0, 30 * 8, 1 * 16},
-                                               u"AUTO_AUDIO_", u"AUDIO",
+                                               u"AUTO_AUDIO", audio_dir,
                                                RecordView::FileType::WAV, 4096, 4);
+    record_view->set_filename_date_frequency(true);
+    record_view->set_auto_trim(false);
+    record_view->hidden(true);
+    record_view->on_error = [&nav](std::string message) {
+        nav.display_modal("Error", message);
+    };
+
     add_children({&labels,
                   &field_lna,
                   &field_vga,
@@ -314,13 +382,9 @@ ReconView::ReconView(NavigationView& nav)
                   &button_restart,
                   &button_mic_app,
                   &button_remove,
-                  record_view.get()});
-
-    record_view->hidden(true);
-    record_view->set_filename_date_frequency(true);
-    record_view->on_error = [&nav](std::string message) {
-        nav.display_modal("Error", message);
-    };
+                  record_view.get(),
+                  &progressbar,
+                  &tx_view});
 
     def_step = 0;
     load_persisted_settings();
@@ -444,7 +508,7 @@ ReconView::ReconView(NavigationView& nav)
         auto settings = receiver_model.settings();
         settings.frequency_step = step_mode.selected_index_value();
         if (field_mode.selected_index_value() == SPEC_MODULATION)
-            nav_.replace<CaptureAppView>();
+            nav_.replace<CaptureAppView>(settings);
         else
             nav_.replace<AnalogAudioView>(settings);
     };
@@ -475,7 +539,7 @@ ReconView::ReconView(NavigationView& nav)
             }
         }
 
-        // MicTX wants Modulation and Bandwidth overrides, but that's only stored on the RX model.
+        // MicTX wants Frequency, Modulation and Bandwidth overrides, but that's only stored on the RX model.
         nav_.replace<MicTXView>(receiver_model.settings());
     };
 
@@ -492,7 +556,7 @@ ReconView::ReconView(NavigationView& nav)
     };
 
     button_manual_recon.on_select = [this](Button&) {
-        button_remove.set_text("DELETE");
+        button_remove.set_text("<DELETE>");
         button_add.hidden(false);
         scanner_mode = false;
         manual_mode = true;
@@ -527,18 +591,18 @@ ReconView::ReconView(NavigationView& nav)
             current_entry().bandwidth = freqman_invalid_index;
             current_entry().step = def_step;
 
-            big_display.set_style(&Styles::white);  // Back to white color
+            big_display.set_style(Theme::getInstance()->bg_darkest);  // Back to white color
 
-            freq_stats.set_style(&Styles::white);
+            freq_stats.set_style(Theme::getInstance()->bg_darkest);
             freq_stats.set("0/0/0");
 
             text_cycle.set_text("1");
             text_max.set("/1");
-            button_scanner_mode.set_style(&Styles::white);
+            button_scanner_mode.set_style(Theme::getInstance()->bg_darkest);
             button_scanner_mode.set_text("MANUAL");
-            file_name.set_style(&Styles::white);
+            file_name.set_style(Theme::getInstance()->bg_darkest);
             file_name.set("MANUAL => " + output_file);
-            desc_cycle.set_style(&Styles::white);
+            desc_cycle.set_style(Theme::getInstance()->bg_darkest);
 
             last_entry.modulation = freqman_invalid_index;
             last_entry.bandwidth = freqman_invalid_index;
@@ -566,27 +630,7 @@ ReconView::ReconView(NavigationView& nav)
     };
 
     button_restart.on_select = [this](Button&) {
-        frequency_file_load();
-        if (frequency_list.size() > 0) {
-            if (fwd) {
-                button_dir.set_text("FW>");
-            } else {
-                button_dir.set_text("<RW");
-            }
-            recon_resume();
-        }
-        if (scanner_mode) {
-            file_name.set_style(&Styles::red);
-            button_scanner_mode.set_style(&Styles::red);
-            button_scanner_mode.set_text("SCAN");
-        } else {
-            file_name.set_style(&Styles::blue);
-            button_scanner_mode.set_style(&Styles::blue);
-            button_scanner_mode.set_text("RECON");
-        }
-        if (frequency_list.size() > FREQMAN_MAX_PER_FILE) {
-            file_name.set_style(&Styles::yellow);
-        }
+        reload_restart_recon();
     };
 
     button_add.on_select = [this](ButtonWithEncoder&) {
@@ -604,14 +648,14 @@ ReconView::ReconView(NavigationView& nav)
         manual_mode = false;
         if (scanner_mode) {
             scanner_mode = false;
-            button_scanner_mode.set_style(&Styles::blue);
+            button_scanner_mode.set_style(Theme::getInstance()->fg_blue);
             button_scanner_mode.set_text("RECON");
-            button_remove.set_text("REMOVE");
+            button_remove.set_text("<REMOVE>");
         } else {
             scanner_mode = true;
-            button_scanner_mode.set_style(&Styles::red);
+            button_scanner_mode.set_style(Theme::getInstance()->fg_red);
             button_scanner_mode.set_text("SCAN");
-            button_remove.set_text("DELETE");
+            button_remove.set_text("<DELETE>");
         }
         frequency_file_load();
         if (autostart) {
@@ -682,7 +726,7 @@ ReconView::ReconView(NavigationView& nav)
     };
 
     // PRE-CONFIGURATION:
-    button_scanner_mode.set_style(&Styles::blue);
+    button_scanner_mode.set_style(Theme::getInstance()->fg_blue);
     button_scanner_mode.set_text("RECON");
     file_name.set("=>");
 
@@ -703,6 +747,9 @@ ReconView::ReconView(NavigationView& nav)
     // set radio
     change_mode(AM_MODULATION);              // start on AM.
     field_mode.set_by_value(AM_MODULATION);  // reflect the mode into the manual selector
+
+    // tx progress bar
+    progressbar.hidden(true);
 
     if (filedelete) {
         delete_file(freq_file_path);
@@ -725,14 +772,14 @@ void ReconView::frequency_file_load() {
     std::string file_input = input_file;    // default recon mode
     if (scanner_mode) {
         file_input = output_file;
-        file_name.set_style(&Styles::red);
-        button_scanner_mode.set_style(&Styles::red);
-        desc_cycle.set_style(&Styles::red);
+        file_name.set_style(Theme::getInstance()->fg_red);
+        button_scanner_mode.set_style(Theme::getInstance()->fg_red);
+        desc_cycle.set_style(Theme::getInstance()->fg_red);
         button_scanner_mode.set_text("SCAN");
     } else {
-        file_name.set_style(&Styles::blue);
-        button_scanner_mode.set_style(&Styles::blue);
-        desc_cycle.set_style(&Styles::blue);
+        file_name.set_style(Theme::getInstance()->fg_blue);
+        button_scanner_mode.set_style(Theme::getInstance()->fg_blue);
+        desc_cycle.set_style(Theme::getInstance()->fg_blue);
         button_scanner_mode.set_text("RECON");
     }
 
@@ -741,9 +788,10 @@ void ReconView::frequency_file_load() {
     freqman_load_options options{
         .load_freqs = load_freqs,
         .load_ranges = load_ranges,
-        .load_hamradios = load_hamradios};
+        .load_hamradios = load_hamradios,
+        .load_repeaters = load_repeaters};
     if (!load_freqman_file(file_input, frequency_list, options) || frequency_list.empty()) {
-        file_name.set_style(&Styles::red);
+        file_name.set_style(Theme::getInstance()->fg_red);
         desc_cycle.set("...empty file...");
         frequency_list.clear();
         text_cycle.set_text(" ");
@@ -751,7 +799,7 @@ void ReconView::frequency_file_load() {
     }
 
     if (frequency_list.size() > FREQMAN_MAX_PER_FILE) {
-        file_name.set_style(&Styles::yellow);
+        file_name.set_style(Theme::getInstance()->fg_yellow);
     }
 
     reset_indexes();
@@ -776,6 +824,12 @@ void ReconView::frequency_file_load() {
 }
 
 void ReconView::on_statistics_update(const ChannelStatistics& statistics) {
+    if (recon_tx)
+        return;
+
+    if (is_repeat_active())
+        return;
+
     chrono_end = chTimeNow();
     systime_t time_interval = chrono_end - chrono_start;
     chrono_start = chrono_end;
@@ -804,7 +858,7 @@ void ReconView::on_statistics_update(const ChannelStatistics& statistics) {
             if (status != 1) {
                 status = 1;
                 if (wait != 0) {
-                    recon_stop_recording();
+                    recon_stop_recording(false);
                     if (field_mode.selected_index_value() != SPEC_MODULATION)
                         audio::output::stop();
                 }
@@ -834,13 +888,13 @@ void ReconView::on_statistics_update(const ChannelStatistics& statistics) {
                         audio_output_start();
                     // contents of a possible recon_start_recording(), but not yet since it's only called once
                     if (auto_record_locked && !is_recording) {
-                        button_audio_app.set_style(&Styles::red);
-                        if (field_mode.selected_index_value() == SPEC_MODULATION)
+                        button_audio_app.set_style(Theme::getInstance()->fg_red);
+                        if (field_mode.selected_index_value() == SPEC_MODULATION) {
                             button_audio_app.set_text("RAW REC");
-                        else
+                        } else
                             button_audio_app.set_text("WAV REC");
                         record_view->start();
-                        button_config.set_style(&Styles::light_grey);  // disable config while recording as it's causing an IO error pop up at exit
+                        button_config.set_style(Theme::getInstance()->fg_light);  // disable config while recording as it's causing an IO error pop up at exit
                         is_recording = true;
                     }
                     // FREQ IS STRONG: GREEN and recon will pause when on_statistics_update()
@@ -956,6 +1010,26 @@ void ReconView::on_statistics_update(const ChannelStatistics& statistics) {
                                     }
                                 }
                             }
+                        } else if (current_entry().type == freqman_type::Repeater) {
+                            // repeater is like single, we only listen on frequency_a and then jump to next entry
+                            if ((fwd && stepper == 0) || stepper > 0) {  // forward
+                                current_index++;
+                                entry_has_changed = true;
+                                // looping
+                                if ((uint32_t)current_index >= frequency_list.size()) {
+                                    has_looped = true;
+                                    current_index = 0;
+                                }
+                            } else if ((!fwd && stepper == 0) || stepper < 0) {
+                                // reverse
+                                current_index--;
+                                entry_has_changed = true;
+                                // if previous if under the list => go back from end
+                                if (current_index < 0) {
+                                    has_looped = true;
+                                    current_index = frequency_list.size() - 1;
+                                }
+                            }
                         }
                         // set index to boundary if !continuous
                         if (has_looped && !continuous) {
@@ -984,6 +1058,7 @@ void ReconView::on_statistics_update(const ChannelStatistics& statistics) {
                     if (entry_has_changed) {
                         timer = 0;
                         switch (current_entry().type) {
+                            case freqman_type::Repeater:
                             case freqman_type::Single:
                                 freq = current_entry().frequency_a;
                                 break;
@@ -1017,7 +1092,7 @@ void ReconView::on_statistics_update(const ChannelStatistics& statistics) {
                     if (stepper > 0) stepper--;
                 }  // if( recon || stepper != 0 || index_stepper != 0 )
             }      // if (frequency_list.size() > 0 )
-        }          /* on_statistic_updates */
+        }          /* on_statistics_updates */
     }
     handle_retune();
     recon_redraw();
@@ -1031,7 +1106,7 @@ void ReconView::recon_pause() {
     if (field_mode.selected_index_value() != SPEC_MODULATION)
         audio_output_start();
 
-    big_display.set_style(&Styles::white);
+    big_display.set_style(Theme::getInstance()->bg_darkest);
     button_pause.set_text("<RESUME>");  // PAUSED, show resume
 }
 
@@ -1043,7 +1118,7 @@ void ReconView::recon_resume() {
     if (field_mode.selected_index_value() != SPEC_MODULATION)
         audio::output::stop();
 
-    big_display.set_style(&Styles::white);
+    big_display.set_style(Theme::getInstance()->bg_darkest);
     button_pause.set_text("<PAUSE>");
 }
 
@@ -1080,28 +1155,44 @@ void ReconView::on_stepper_delta(int32_t v) {
 }
 
 size_t ReconView::change_mode(freqman_index_t new_mod) {
+    if (recon_tx || is_repeat_active() || is_recording)
+        return 0;
     field_mode.on_change = [this](size_t, OptionsField::value_t) {};
     field_bw.on_change = [this](size_t, OptionsField::value_t) {};
-    recon_stop_recording();
-    remove_child(record_view.get());
-    record_view.reset();
-    if (new_mod == SPEC_MODULATION) {
+    recon_stop_recording(false);
+    if (record_view != nullptr) {
+        remove_child(record_view.get());
+        record_view.reset();
+    }
+    if (field_mode.selected_index_value() != SPEC_MODULATION) {
         audio::output::stop();
-        record_view = std::make_unique<RecordView>(Rect{0, 0, 30 * 8, 1 * 16},
-                                                   u"AUTO_RAW_", u"CAPTURES",
-                                                   RecordView::FileType::RawS16, 16384, 3);
+    }
+    if (new_mod == SPEC_MODULATION) {
+        if (persistent_memory::recon_repeat_recorded()) {
+            record_view = std::make_unique<RecordView>(Rect{0, 0, 30 * 8, 1 * 16},
+                                                       u"RECON_REPEAT.C16", captures_dir,
+                                                       RecordView::FileType::RawS16, 16384, 3);
+            record_view->set_filename_as_is(true);
+        } else {
+            record_view = std::make_unique<RecordView>(Rect{0, 0, 30 * 8, 1 * 16},
+                                                       u"AUTO_RAW", captures_dir,
+                                                       RecordView::FileType::RawS16, 16384, 3);
+            record_view->set_filename_date_frequency(true);
+        }
     } else {
         record_view = std::make_unique<RecordView>(Rect{0, 0, 30 * 8, 1 * 16},
-                                                   u"AUTO_AUDIO_", u"AUDIO",
+                                                   u"AUTO_AUDIO", audio_dir,
                                                    RecordView::FileType::WAV, 4096, 4);
+        record_view->set_filename_date_frequency(true);
     }
+    record_view->set_auto_trim(false);
     add_child(record_view.get());
     record_view->hidden(true);
-    record_view->set_filename_date_frequency(true);
     record_view->on_error = [this](std::string message) {
         nav_.display_modal("Error", message);
     };
     receiver_model.disable();
+    transmitter_model.disable();
     baseband::shutdown();
     size_t recording_sampling_rate = 0;
     switch (new_mod) {
@@ -1144,7 +1235,6 @@ size_t ReconView::change_mode(freqman_index_t new_mod) {
             field_bw.on_change = [this](size_t, OptionsField::value_t sampling_rate) {
                 // record_view determines the correct oversampling to apply and returns the actual sample rate.
                 auto actual_sampling_rate = record_view->set_sampling_rate(sampling_rate);
-
                 // The radio needs to know the effective sampling rate.
                 receiver_model.set_sampling_rate(actual_sampling_rate);
                 receiver_model.set_baseband_bandwidth(filter_bandwidth_for_sampling_rate(actual_sampling_rate));
@@ -1220,6 +1310,158 @@ void ReconView::handle_remove_current_item() {
         text_cycle.set_text(" ");
     }
     update_description();
+}
+
+void ReconView::on_repeat_tx_progress(const uint32_t progress) {
+    progressbar.set_value(progress);
+}
+
+void ReconView::repeat_file_error(const std::filesystem::path& path, const std::string& message) {
+    nav_.display_modal("Error", "Error opening file \n" + path.string() + "\n" + message);
+}
+
+bool ReconView::is_repeat_active() const {
+    return replay_thread != nullptr;
+}
+
+void ReconView::start_repeat() {
+    // Prepare to send a file.
+    if (recon_tx == false) {
+        recon_tx = true;
+
+        if (record_view != nullptr) {
+            record_view->stop();
+            remove_child(record_view.get());
+            record_view.reset();
+        }
+
+        receiver_model.disable();
+        transmitter_model.disable();
+        baseband::shutdown();
+
+        baseband::run_image(portapack::spi_flash::image_tag_replay);
+
+        size_t rawsize = 0;
+        {
+            File capture_file;
+            auto error = capture_file.open(rawfile);
+            if (error) {
+                repeat_file_error(rawfile, "Can't open file to send for size");
+                return;
+            }
+            rawsize = capture_file.size();
+        }
+
+        // Reset the transmit progress bar.
+        uint8_t sample_size = std::filesystem::capture_file_sample_size(rawfile);
+        progressbar.set_value(0);
+        progressbar.set_max(rawsize * sizeof(complex16_t) / sample_size);
+        progressbar.hidden(false);
+
+        auto metadata = read_metadata_file(rawmeta);
+        // If no metadata found, fallback to the TX frequency.
+        if (!metadata) {
+            metadata = {freq, 500'000};
+            repeat_file_error(rawmeta, "Can't open file to read meta, using default rx_freq,500'000");
+        }
+
+        // Update the sample rate in proc_replay baseband.
+        baseband::set_sample_rate(metadata->sample_rate,
+                                  get_oversample_rate(metadata->sample_rate));
+
+        transmitter_model.set_sampling_rate(get_actual_sample_rate(metadata->sample_rate));
+        transmitter_model.set_baseband_bandwidth(metadata->sample_rate <= 500'000 ? 1'750'000 : 2'500'000);  // TX LPF min 1M75 for SR <=500K, and  2M5 (by experimental test) for SR >500K
+
+        // set TX to repeater TX freq if entry is Repeater and have a valid freq, else use recorded one
+        if (current_entry().type == freqman_type::Repeater && current_entry().frequency_b != 0) {
+            transmitter_model.set_target_frequency(current_entry().frequency_b);
+        } else {
+            transmitter_model.set_target_frequency(metadata->center_frequency);
+        }
+
+        // set TX powers and enable transmitter
+        transmitter_model.set_tx_gain(persistent_memory::recon_repeat_gain());
+        transmitter_model.set_rf_amp(persistent_memory::recon_repeat_amp());
+        transmitter_model.enable();
+    }
+
+    // clear replay thread and set reader
+    replay_thread.reset();
+    auto reader = std::make_unique<FileConvertReader>();
+    auto error = reader->open(rawfile);
+    if (error) {
+        repeat_file_error(rawfile, "Can't open file to send to thread");
+        return;
+    }
+    // wait for TX if needed (hackish, direct screen update since the UI will be blocked)
+    if (persistent_memory::recon_repeat_delay() > 0) {
+        uint8_t delay = persistent_memory::recon_repeat_delay();
+        Painter p;
+        while (delay > 0) {
+            std::string delay_message = "TX DELAY: " + to_string_dec_uint(delay) + "s";
+
+            // update display information
+            p.fill_rectangle({0, (SCREEN_H / 2) - 16, SCREEN_W, 64}, Theme::getInstance()->fg_light->foreground);
+            p.draw_string({(SCREEN_W / 2) - 7 * 8, SCREEN_H / 2}, *Theme::getInstance()->fg_red, delay_message);
+
+            // sleep 1 second
+            chThdSleepMilliseconds(1000);
+
+            // decre delay
+            if (delay > 0)
+                delay = delay - 1;
+            else
+                break;
+        }
+    }
+
+    // ReplayThread starts immediately on construction; must be set before creating.
+    repeat_ready_signal = true;
+    repeat_cur_rep++;
+    replay_thread = std::make_unique<ReplayThread>(
+        std::move(reader),
+        /* read_size */ repeat_read_size,
+        /* buffer_count */ repeat_buffer_count,
+        &repeat_ready_signal,
+        [](uint32_t return_code) {
+            ReplayThreadDoneMessage message{return_code};
+            EventDispatcher::send_message(message);
+        });
+}
+
+void ReconView::stop_repeat(const bool do_loop) {
+    repeat_ready_signal = false;
+
+    if (is_repeat_active()) {
+        replay_thread.reset();
+        transmitter_model.disable();
+    }
+
+    // repeat transmit if current number of repetitions (repeat_cur_rep) is < recon configured number of repetitions (recon_repeat_nb)
+    if (do_loop && repeat_cur_rep < persistent_memory::recon_repeat_nb()) {
+        start_repeat();
+    } else {
+        repeat_cur_rep = 0;
+        recon_tx = false;
+        if (persistent_memory::recon_repeat_recorded_file_mode() == RECON_REPEAT_AND_KEEP) {
+            // rename file here to keep
+            std::filesystem::path base_path = next_filename_matching_pattern(repeat_rec_path / u"REC_????.*");
+            rename_file(rawfile, base_path.replace_extension(u".C16"));
+            rename_file(rawmeta, base_path.replace_extension(u".TXT"));
+        }
+        reload_restart_recon();
+        progressbar.hidden(true);
+        set_dirty();  // fix progressbar no hiding
+    }
+}
+
+void ReconView::handle_repeat_thread_done(const uint32_t return_code) {
+    if (return_code == ReplayThread::END_OF_FILE) {
+        stop_repeat(true);
+    } else if (return_code == ReplayThread::READ_ERROR) {
+        stop_repeat(false);
+        repeat_file_error(rawfile, "Can't open file to send.");
+    }
 }
 
 } /* namespace ui */

@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2015 Jared Boone, ShareBrained Technology, Inc.
+ * Copyright (C) 2023 Mark Thompson
  *
  * This file is part of PortaPack.
  *
@@ -101,6 +102,8 @@ class ERTProcessor : public BasebandProcessor {
     void scm_handler(const baseband::Packet& packet);
     void scmplus_handler(const baseband::Packet& packet);
     void idm_handler(const baseband::Packet& packet);
+    void on_message(const Message* const msg);
+    void on_beep_message(const AudioBeepMessage& message);
 
     float sum_half_period[2];
     float sum_period[3];

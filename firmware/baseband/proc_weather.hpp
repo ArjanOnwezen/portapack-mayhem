@@ -40,8 +40,8 @@ class WeatherProcessor : public BasebandProcessor {
     void on_message(const Message* const message) override;
 
    private:
-    static constexpr size_t baseband_fs = 4'000'000;                           // it works, I think we need to write that master clock in the baseband_threat , even later we decimate it.
-    static constexpr uint32_t nsPerDecSamp = 1'000'000'000 / baseband_fs * 8;  // Scaled it due to less array buffer sampes due to /8 decimation.  250 nseg (4Mhz) * 8
+    size_t baseband_fs = 0;  // will be set later by configure message.
+    uint32_t nsPerDecSamp = 0;
 
     /* Array Buffer aux. used in decim0 and decim1 IQ c16 signed  data ; (decim0 defines the max length of the array) */
     std::array<complex16_t, 512> dst{};  // decim0 /4 ,  2048/4 = 512 complex I,Q
@@ -66,6 +66,7 @@ class WeatherProcessor : public BasebandProcessor {
 
     FProtoListGeneral* protoList = new WeatherProtos();  // holds all the protocols we can parse
     void configure(const SubGhzFPRxConfigureMessage& message);
+    void on_beep_message(const AudioBeepMessage& message);
 
     /* NB: Threads should be the last members in the class definition. */
     BasebandThread baseband_thread{baseband_fs, this, baseband::Direction::Receive};
